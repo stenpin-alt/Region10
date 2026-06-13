@@ -330,6 +330,7 @@ else:
     # 5 Kolonner til ugedagene
     visnings_slots = st.columns(5)
 
+    # ... (din eksisterende kode før løkken)
     for i, dag in enumerate(ALLE_DAGE_GLOBAL):
         with visnings_slots[i]:
             if dag not in valgte_dage:
@@ -340,7 +341,7 @@ else:
                 st.markdown(f"### **{dag[:3]}.** <span style='font-size:13px; color:gray;'>({len(dag_aftaler)}/8)</span>", unsafe_allow_html=True)
                 st.markdown("---")
                 
-               for _idx, _aftale in enumerate(dag_aftaler):
+                for _idx, _aftale in enumerate(dag_aftaler):
                     zone, farve = hent_zone_og_farve(_aftale["postnr"])
                     
                     with st.container(border=True):
