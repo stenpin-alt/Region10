@@ -167,73 +167,49 @@ def kør_rullende_kalender_motor():
     st.session_state['aftaler'] = []
     idag = datetime.now()
     start_mandag = idag - timedelta(days=idag.weekday())
+    global_tæller = {}
     
     AUTOMATISK_LOFT = 8
-    MAX_LOFT = 10
-    global_tæller = {}
+    TOTAL_LOFT = 10
 
     for uge_frem in range(0, 24):
         mål_mandag = start_mandag + timedelta(weeks=uge_frem)
         uge_id = f"{mål_mandag.year}-Uge{mål_mandag.isocalendar()[1]}"
-        
         if uge_id not in global_tæller: global_tæller[uge_id] = {}
 
         for k_id, k_info in st.session_state['konsulenter'].items():
             if k_id not in global_tæller[uge_id]:
                 global_tæller[uge_id][k_id] = {d: 0 for d in ALLE_DAGE_GLOBAL}
             
-            kunder_i_uge = []
-            for kunde in st.session_state['kunder']:
-                if int(kunde["konsulent_id"]) == int(k_id):
-                    uge_nummer = mål_mandag.isocalendar()[1]
-                    frekvens = float(kunde["frekvens"])
-                    if (frekvens >= 1.0) or (frekvens == 0.5 and uge_nummer % 2 == 0) or (frekvens == 0.25 and uge_nummer % 4 == 1):
-                        kunder_i_uge.append(kunde)
-
-            # 1. PRIORITET: Håndter manuelle flytninger
+            kunder_i_uge = [k for k in st.session_state['kunder'] if int(k["konsulent_id"]) == int(k_id)]
+            
+            # 1. Manuelle flytninger (Højeste prioritet)
             for kunde in kunder_i_uge[:]:
                 unik_nøgle = f"{kunde['id']}-{uge_id}"
                 if unik_nøgle in st.session_state['manuelle_flytninger']:
                     valgt_dag = st.session_state['manuelle_flytninger'][unik_nøgle]
-                    
-                    # Tjek om der er plads på den valgte dag
                     if global_tæller[uge_id][k_id][valgt_dag] < TOTAL_LOFT:
                         global_tæller[uge_id][k_id][valgt_dag] += 1
                         st.session_state['aftaler'].append({
-                            "id": unik_nøgle, 
-                            "kunde_id": kunde["id"], 
-                            "kundenavn": kunde["navn"],
-                            "by": kunde["by"], 
-                            "postnr": kunde["postnr"], 
-                            "konsulent_id": k_id,
-                            "uge_id": uge_id, 
-                            "dag": valgt_dag
+                            "id": unik_nøgle, "kunde_id": kunde["id"], "kundenavn": kunde["navn"],
+                            "by": kunde["by"], "postnr": kunde["postnr"], "konsulent_id": k_id,
+                            "uge_id": uge_id, "dag": valgt_dag
                         })
-                    
-                    # Kunden er nu behandlet (enten placeret eller ignoreret pga. loft), 
-                    # så vi fjerner den fra listen, så den ikke bliver placeret automatisk senere
                     kunder_i_uge.remove(kunde)
 
-
-            # 2. AUTOMATISK: Placer resten
-            konsulent_arbejdsdage = st.session_state['arbejdsdage'].get(k_id, ALLE_DAGE_GLOBAL)
-            bopæl_pnr = BOPÆL_POSTNUMRE.get(k_info["navn"], 4000)
-            kunder_i_uge.sort(key=lambda x: abs(int(str(x["postnr"])) - bopæl_pnr))
-
+            # 2. Automatisk placering af resten
             for kunde in kunder_i_uge:
-                for dag in konsulent_arbejdsdage:
-                    if global_tæller[uge_id][k_id][dag] < AUTO_LOFT:
+                placeret = False
+                for dag in ALLE_DAGE_GLOBAL:
+                    if global_tæller[uge_id][k_id][dag] < AUTOMATISK_LOFT:
                         global_tæller[uge_id][k_id][dag] += 1
                         st.session_state['aftaler'].append({
-                            "id": f"{kunde['id']}-{uge_id}", 
-                            "kunde_id": kunde["id"], 
-                            "kundenavn": kunde["navn"],
-                            "by": kunde["by"], 
-                            "postnr": kunde["postnr"], 
-                            "konsulent_id": k_id,
-                            "uge_id": uge_id, 
-                            "dag": dag
+                            "id": f"{kunde['id']}-{uge_id}", "kunde_id": kunde["id"], 
+                            "kundenavn": kunde["navn"], "by": kunde["by"], 
+                            "postnr": kunde["postnr"], "konsulent_id": k_id,
+                            "uge_id": uge_id, "dag": dag
                         })
+                        placeret = True
                         break
 # --- LOGIN SKÆRM ---
 if not st.session_state['logget_ind']:
@@ -385,14 +361,10 @@ else:
                                 label_visibility="collapsed"
                             )
                             
-                            if valgt_ny_dag != dag:
-    # 1. Opdater flytningen
-    st.session_state['manuelle_flytninger'][_aftale["id"]] = valgt_ny_dag
-    # 2. Gem til disk med det samme
-    gem_data_til_disken()
-    # 3. KØR MOTOREN IGEN - det er denne linje, der flytter kunden!
-    kør_rullende_kalender_motor()
-    # 4. Opdater siden
-    st.rerun()
+                           if valgt_ny_dag != dag:
+                                st.session_state['manuelle_flytninger'][_aftale["id"]] = valgt_ny_dag
+                                gem_data_til_disken()
+                                kør_rullende_kalender_motor()
+                                st.rerun()
                         else:
                             st.markdown(f"<p style='margin:0px; font-size:11px; color:darkblue; font-weight:bold;'>📅 {dag}</p>", unsafe_allow_html=True)
