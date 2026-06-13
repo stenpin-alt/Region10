@@ -181,6 +181,7 @@ def kør_rullende_kalender_motor():
                     valgt_dag = st.session_state['manuelle_flytninger'][unik_nøgle]
                     if global_tæller[uge_id][k_id][valgt_dag] < TOTAL_LOFT:
                         global_tæller[uge_id][k_id][valgt_dag] += 1
+                        if placeret:
                         st.session_state['aftaler'].append({
                             "id": unik_nøgle, 
                             "kunde_id": kunde["id"], 
@@ -188,7 +189,7 @@ def kør_rullende_kalender_motor():
                             "by": kunde["by"], 
                             "postnr": kunde["postnr"], 
                             "konsulent_id": k_id,
-                            "uge_id": uge_id, 
+                            "uge_id": tjek_uge_id, 
                             "dag": valgt_dag
                         })
                         kunder_i_uge.remove(kunde)
