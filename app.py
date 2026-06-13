@@ -8,27 +8,13 @@ st.set_page_config(page_title="Ruteplanlægger Pro", layout="wide")
 # CSS-optimering med flotte lodrette skillelinjer mellem ugedagene
 st.markdown("""
     <style>
-        .block-container { padding-top: 1rem !important; padding-bottom: 1rem !important; }
-        [data-testid="stVerticalBlock"] > div { padding-bottom: 0px !important; margin-bottom: 0px !important; }
-        
-        /* Gør dropdown-menuerne indeni kundekortene små og kompakte */
-        div.stSelectbox div[data-testid="stSelectboxWithDynamicOptions"] {
-            transform: scale(0.9);
-            transform-origin: left center;
+        /* Målretter selve kolonne-indholdet mere præcist */
+        [data-testid="column"] {
+            border-right: 2px solid #ddd !important;
         }
-        .stAlert { padding: 8px !important; margin-bottom: 8px !important; }
-        
-        /* --- DESIGN AF LODRETTE SKILLELINJER --- */
-        div[data-testid="column"] {
-            border-right: 1.5px solid #e6e9ef !important;
-            padding-right: 15px !important;
-            padding-left: 5px !important;
-        }
-        
-        /* Fjern linjen på den sidste kolonne (Fredag) */
-        div[data-testid="column"]:last-child {
+        /* Fjerner kanten på den sidste kolonne så layoutet er pænt */
+        [data-testid="column"]:last-child {
             border-right: none !important;
-            padding-right: 5px !important;
         }
     </style>
 """, unsafe_allow_html=True)
