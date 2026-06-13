@@ -8,34 +8,15 @@ st.set_page_config(page_title="Ruteplanlægger Pro", layout="wide")
 # CSS-optimering med flotte lodrette skillelinjer mellem ugedagene
 st.markdown("""
     <style>
-        /* Farvelæg kolonnerne med stribe-effekt */
-        /* Kolonne 1 (Mandag) */
-        [data-testid="column"]:nth-of-type(1) {
-            background-color: #f9f9f9;
-            padding: 10px;
-            border-radius: 5px;
+        /* Tvinger baggrundsfarve på alle kolonner */
+        [data-testid="column"]:nth-of-type(odd) {
+            background-color: #f2f2f2 !important;
+            padding: 10px !important;
+            border-radius: 8px !important;
         }
-        /* Kolonne 2 (Tirsdag) */
-        [data-testid="column"]:nth-of-type(2) {
-            background-color: #ffffff;
-            padding: 10px;
-        }
-        /* Kolonne 3 (Onsdag) */
-        [data-testid="column"]:nth-of-type(3) {
-            background-color: #f9f9f9;
-            padding: 10px;
-            border-radius: 5px;
-        }
-        /* Kolonne 4 (Torsdag) */
-        [data-testid="column"]:nth-of-type(4) {
-            background-color: #ffffff;
-            padding: 10px;
-        }
-        /* Kolonne 5 (Fredag) */
-        [data-testid="column"]:nth-of-type(5) {
-            background-color: #f9f9f9;
-            padding: 10px;
-            border-radius: 5px;
+        [data-testid="column"]:nth-of-type(even) {
+            background-color: #ffffff !important;
+            padding: 10px !important;
         }
     </style>
 """, unsafe_allow_html=True)
