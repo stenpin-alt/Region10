@@ -6,8 +6,12 @@ import os
 st.set_page_config(
     page_title="Convenience Ruteplanlægger Pro", 
     layout="wide",
-    page_icon="logo.png")
-st.sidebar.image("logo.png", use_container_width=True)
+    page_icon="logo.png"
+)
+
+# Håndter hvis logo ikke findes, så appen ikke går ned
+if os.path.exists("logo.png"):
+    st.sidebar.image("logo.png", use_container_width=True)
     
 # CSS-optimering med flotte lodrette skillelinjer mellem ugedagene
 st.markdown("""
@@ -54,6 +58,7 @@ FIL_KUNDER = "gemt_kunder.csv"
 FIL_KONSULENTER = "gemt_konsulenter.csv"
 FIL_FLYTNINGER = "gemt_flytninger.csv"
 FIL_KODER = "gemt_koder.csv"
+FIL_ARBEJDSDAGE = "gemt_arbejdsdage.csv"
 
 def gem_data_til_disken():
     if st.session_state['kunder']:
@@ -67,6 +72,9 @@ def gem_data_til_disken():
     if st.session_state['bruger_koder']:
         df_koder = pd.DataFrame([{"navn": k, "kode": v} for k, v in st.session_state['bruger_koder'].items()])
         df_koder.to_csv(FIL_KODER, index=False)
+    if st.session_state['arbejdsdage']:
+        df_dage = pd.DataFrame([{"konsulent_id": k, "dage": ",".join(v)} for k, v in st.session_state['arbejdsdage'].items()])
+        df_dage.to_csv(FIL_ARBEJDSDAGE, index=False)
 
 def hent_data_fra_disken():
     if os.path.exists(FIL_KONSULENTER) and not st.session_state['konsulenter']:
@@ -81,6 +89,9 @@ def hent_data_fra_disken():
     if os.path.exists(FIL_KODER):
         df_koder = pd.read_csv(FIL_KODER)
         st.session_state['bruger_koder'] = {str(r["navn"]): str(r["kode"]) for _, r in df_koder.iterrows()}
+    if os.path.exists(FIL_ARBEJDSDAGE):
+        df_dage = pd.read_csv(FIL_ARBEJDSDAGE)
+        st.session_state['arbejdsdage'] = {int(r["konsulent_id"]): str(r["dage"]).split(",") for _, r in df_dage.iterrows()}
 
 # --- INITIALISERING ---
 if 'konsulenter' not in st.session_state: st.session_state['konsulenter'] = {}
@@ -139,33 +150,30 @@ def hent_zone_og_farve(pnr):
 # --- RUTE MOTOR (8+2 BUFFER) ---
 def kør_rullende_kalender_motor():
     idag = datetime.now()
-    start_mandag = idag - timedelta(days=idag.weekday())
+    start_mandag = i_dag_mandag = idag - timedelta(days=idag.weekday())
     st.session_state['aftaler'] = []
     AUTOMATISK_LOFT = 8
-    MAX_LOFT = 10 
     
     global_tæller = {}
 
-    # 1. Identificer alle kunder der skal besøges i de næste 24 uger
+    # Identificer alle kunder der skal besøges i de næste 24 uger
     for uge_frem in range(0, 24):
         mål_mandag = start_mandag + timedelta(weeks=uge_frem)
         uge_nummer = mål_mandag.isocalendar()[1]
-        uge_id = f"{mål_mandag.year}-Uge{uge_nummer}"
+        uge_id = f"{mål_mandag.year}-Uge{uge_nummer:02d}"  # :02d sikrer korrekt kronologisk sortering
         if uge_id not in global_tæller: global_tæller[uge_id] = {}
         
-        # Opret en liste over alle kunder og deres status
         for k_id, k_info in st.session_state['konsulenter'].items():
             if k_id not in global_tæller[uge_id]: global_tæller[uge_id][k_id] = {d: 0 for d in ALLE_DAGE_GLOBAL}
             
             kunder_i_uge = []
             for kunde in st.session_state['kunder']:
                 if int(kunde["konsulent_id"]) == int(k_id):
-                    # Tjek frekvens...
                     frekvens = float(kunde["frekvens"])
                     if (frekvens >= 1.0) or (frekvens == 0.5 and uge_nummer % 2 == 0) or (frekvens == 0.25 and uge_nummer % 4 == 1):
-                        kunder_i_uge.append(kunde)
+                        kunder_i_uge.append(kunde.copy())
 
-            # 2. HÅNDTÉR MANUELLE FLYTNINGER FØRST (Lås dem fast)
+            # 1. HÅNDTÉR MANUELLE FLYTNINGER FØRST (Lås dem fast)
             for kunde in kunder_i_uge[:]:
                 unik_nøgle = f"{kunde['id']}-{uge_id}"
                 if unik_nøgle in st.session_state['manuelle_flytninger']:
@@ -176,10 +184,13 @@ def kør_rullende_kalender_motor():
                         "by": kunde["by"], "postnr": kunde["postnr"], "konsulent_id": k_id,
                         "uge_id": uge_id, "dag": man_dag
                     })
-                    kunder_i_uge.remove(kunde) # Fjern fra listen så de ikke placeres igen
+                    kunder_i_uge.remove(kunde)
 
-            # 3. PLACÉR RESTEN AUTOMATISK
+            # 2. PLACÉR RESTEN AUTOMATISK
             konsulent_arbejdsdage = st.session_state['arbejdsdage'].get(k_id, ALLE_DAGE_GLOBAL)
+            if not konsulent_arbejdsdage:  # Hvis alle flueben er fjernet
+                konsulent_arbejdsdage = ALLE_DAGE_GLOBAL
+                
             for kunde in kunder_i_uge:
                 placeret = False
                 for dag in konsulent_arbejdsdage:
@@ -190,23 +201,39 @@ def kør_rullende_kalender_motor():
                             "by": kunde["by"], "postnr": kunde["postnr"], "konsulent_id": k_id,
                             "uge_id": uge_id, "dag": dag
                         })
-                        placeret = True; break
+                        placeret = True
+                        break
+                
+                # Hvis der ikke var plads under AUTOMATISK_LOFT, smid på første ledige arbejdsdag op til MAX_LOFT (10)
+                if not placeret:
+                    for dag in konsulent_arbejdsdage:
+                        if global_tæller[uge_id][k_id][dag] < 10:
+                            global_tæller[uge_id][k_id][dag] += 1
+                            st.session_state['aftaler'].append({
+                                "id": f"{kunde['id']}-{uge_id}", "kunde_id": kunde["id"], "kundenavn": kunde["navn"],
+                                "by": kunde["by"], "postnr": kunde["postnr"], "konsulent_id": k_id,
+                                "uge_id": uge_id, "dag": dag
+                            })
+                            break
 
 # --- LOGIN SKÆRM ---
 if not st.session_state['logget_ind']:
-    st.title("🔐 Conveience Ruteplanlægger  - Login")
+    st.title("🔐 Convenience Ruteplanlægger - Login")
     with st.form("login_form"):
         u_input = st.text_input("Brugernavn (Fornavn eller fulde navn)")
         p_input = st.text_input("Adgangskode", type="password")
         if st.form_submit_button("Log ind"):
-            if tjek_login(u_input, p_input): st.rerun()
-            else: st.error("Forkert login. Prøv igen.")
+            if tjek_login(u_input, p_input): 
+                st.rerun()
+            else: 
+                st.error("Forkert login. Prøv igen.")
     st.stop()
 
 # --- SIDEBAR & LOGUD ---
 st.sidebar.markdown(f"👤 Bruger: **{st.session_state['bruger_navn']}**")
 if st.sidebar.button("Log ud 🔓"):
-    st.session_state['logget_ind'] = False; st.rerun()
+    st.session_state['logget_ind'] = False
+    st.rerun()
 
 # --- EXCEL UPLOAD ---
 if st.session_state['bruger_rolle'] == "admin":
@@ -243,7 +270,8 @@ if st.session_state['bruger_rolle'] == "admin":
                 kør_rullende_kalender_motor()
                 st.sidebar.success("Database opdateret!")
                 st.rerun()
-        except Exception as e: st.sidebar.error(f"Fejl: {e}")
+        except Exception as e: 
+            st.sidebar.error(f"Fejl: {e}")
 
     st.sidebar.markdown("---")
     st.sidebar.header("🔑 Admin: Rediger Koder")
@@ -258,46 +286,62 @@ if st.session_state['bruger_rolle'] == "admin":
             st.session_state['bruger_koder'][nøgle_navn] = ny_kode_input.strip()
             gem_data_til_disken()
             st.sidebar.success(f"Kode ændret permanent!")
-        else: st.sidebar.error("Koden må ikke være tom.")
+        else: 
+            st.sidebar.error("Koden må ikke være tom.")
 
+# Kør motoren hvis data er til stede men aftaler ikke er genereret
 if len(st.session_state['kunder']) > 0 and len(st.session_state['aftaler']) == 0:
     kør_rullende_kalender_motor()
 
-# --- VISNING ---
+# --- VISNINGS LOGIK ---
 er_læse_bruger = False
 if st.session_state['bruger_rolle'] == "admin" or st.session_state['bruger_rolle'] == "chef":
-    if st.session_state['bruger_rolle'] == "chef": er_læse_bruger = True
+    if st.session_state['bruger_rolle'] == "chef": 
+        er_læse_bruger = True
     if st.session_state['konsulenter']:
         valgt_konsulent_id = st.sidebar.selectbox("Vis rute for:", options=list(st.session_state['konsulenter'].keys()), format_func=lambda x: st.session_state['konsulenter'][x]["navn"])
         konsulent_navn = st.session_state['konsulenter'][valgt_konsulent_id]["navn"]
-    else: valgt_konsulent_id = 1; konsulent_navn = "Ingen data"
+    else: 
+        valgt_konsulent_id = 1
+        konsulent_navn = "Ingen data"
 else:
     valgt_konsulent_id = st.session_state['valgt_konsulent_id_login']
     konsulent_navn = st.session_state['bruger_navn']
 
+# --- INDSTILLINGER (FLUEBEN FOR ARBEJDSDAGE) ---
 if not er_læse_bruger:
     st.sidebar.markdown("---")
     st.sidebar.header("⚙️ Indstillinger")
     gemte_dage = st.session_state['arbejdsdage'].get(valgt_konsulent_id, ALLE_DAGE_GLOBAL)
     valgte_dage = []
     for d in ALLE_DAGE_GLOBAL:
-        if st.sidebar.checkbox(d, value=(d in gemte_dage), key=f"d-check-{valgt_konsulent_id}-{d}"): valgte_dage.append(d)
+        if st.sidebar.checkbox(d, value=(d in gemte_dage), key=f"d-check-{valgt_konsulent_id}-{d}"): 
+            valgte_dage.append(d)
     if valgte_dage != gemte_dage:
         st.session_state['arbejdsdage'][valgt_konsulent_id] = valgte_dage
-        kør_rullende_kalender_motor(); st.rerun()
+        gem_data_til_disken()
+        kør_rullende_kalender_motor()
+        st.rerun()
 else:
     valgte_dage = st.session_state['arbejdsdage'].get(valgt_konsulent_id, ALLE_DAGE_GLOBAL)
 
+# --- UGE DROPDOWN VALG ---
+# Her henter vi alle de uger motoren har beregnet (24 uger) i stedet for kun at begrænse til 16
 sorterede_uger = sorted(list({a["uge_id"] for a in st.session_state['aftaler']}))
-visnings_uger = sorterede_uger[:16] if len(sorterede_uger) > 16 else sorterede_uger
-valgt_uge = st.sidebar.selectbox("Vælg uge:", options=visnings_uger if visnings_uger else ["Ingen uger"])
 
+if sorterede_uger:
+    valgt_uge = st.sidebar.selectbox("Vælg uge:", options=sorterede_uger)
+else:
+    valgt_uge = st.sidebar.selectbox("Vælg uge:", options=["Ingen uger fundet"])
+
+# --- HOVEDSKÆRM ---
 st.title("🗺️ Convenience Ruteplanlægger @ Royal Unibrew")
 
 if len(st.session_state['kunder']) == 0:
-    st.warning("⚠️ Ingen data i skyen endnu. Admin skal uploade listen.")
+    st.warning("⚠️ Ingen data i skyen endnu. Admin skal uploade listen via Excel.")
 else:
-    if er_læse_bruger: st.info("ℹ️ Overordnet leder (Casper Valdemar) — Kun kigge-adgang.")
+    if er_læse_bruger: 
+        st.info("ℹ️ Overordnet leder (Casper Valdemar) — Kun kigge-adgang.")
     st.subheader(f"📅 {konsulent_navn} — {valgt_uge}")
     st.markdown("---")
 
@@ -308,10 +352,9 @@ else:
         with visnings_slots[i]:
             if dag not in valgte_dage:
                 st.markdown(f"### 🛑 {dag[:3]}.")
-                st.caption("Lukket")
+                st.caption("Lukket / Fri")
             else:
                 dag_aftaler = sorted([a for a in aktuelle_aftaler if a["dag"] == dag], key=lambda x: str(x["postnr"]))
-                # Viser nu antallet ud af 10 (MAX_LOFT)
                 st.markdown(f"### **{dag[:3]}.** <span style='font-size:13px; color:gray;'>({len(dag_aftaler)}/10)</span>", unsafe_allow_html=True)
                 st.markdown("---")
                 
@@ -320,10 +363,20 @@ else:
                     with st.container(border=True):
                         st.markdown(f"<p style='margin:0px; font-size:13px; font-weight:bold; line-height:1.2;'>{farve} {_aftale['kundenavn']}</p>", unsafe_allow_html=True)
                         st.markdown(f"<p style='margin:2px 0px 6px 0px; font-size:11px; color:gray;'>📍 {_aftale['postnr']} {_aftale['by']}</p>", unsafe_allow_html=True)
+                        
                         if not er_læse_bruger:
-                            try: nuværende_idx = valgte_dage.index(dag)
-                            except: nuværende_idx = 0
-                            valgt_ny_dag = st.selectbox("Flyt til:", options=valgte_dage, index=nuværende_idx, key=f"select-{_aftale['id']}-{_idx}", label_visibility="collapsed")
+                            try: 
+                                nuværende_idx = valgte_dage.index(dag)
+                            except: 
+                                nuværende_idx = 0
+                                
+                            valgt_ny_dag = st.selectbox(
+                                "Flyt til:", 
+                                options=valgte_dage, 
+                                index=nuværende_idx, 
+                                key=f"select-{_aftale['id']}-{_idx}", 
+                                label_visibility="collapsed"
+                            )
                             if valgt_ny_dag != dag:
                                 st.session_state['manuelle_flytninger'][_aftale["id"]] = valgt_ny_dag
                                 gem_data_til_disken()
