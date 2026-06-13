@@ -91,31 +91,35 @@ if 'bruger_navn' not in st.session_state: st.session_state['bruger_navn'] = None
 
 hent_data_fra_disken()
 
-# --- LOGIN ---
+# --- LOGIN MED SIKRET "Region10" STANDARDKODE ---
 def tjek_login(brugernavn, kode):
-    b_clean = brugernavn.strip().lower()
+    b_clean = brugernavn.strip()
     k_clean = kode.strip()
+    
+    # Admin login
     admin_kode = st.session_state['bruger_koder'].get("admin", "admin123")
-    if b_clean == "admin" and k_clean == admin_kode:
+    if b_clean.lower() == "admin" and k_clean == admin_kode:
         st.session_state['logget_ind'] = True
         st.session_state['bruger_rolle'] = "admin"
         st.session_state['bruger_navn'] = "Administrator"
         return True
+        
+    # Chef login (Casper Valdemar) - Tjekker både "Region10" og "region10" som standard
     chef_kode = st.session_state['bruger_koder'].get("Casper Valdemar", "Region10")
-    if (b_clean == "casper" or b_clean == "casper valdemar") and (k_clean == chef_kode or k_clean.lower() == "region10"):
+    if b_clean.lower() == "casper valdemar" and (k_clean == chef_kode or k_clean.lower() == "region10"):
         st.session_state['logget_ind'] = True
         st.session_state['bruger_rolle'] = "chef"
         st.session_state['bruger_navn'] = "Casper Valdemar"
         return True
+
+    # Konsulent login - Tjekker både gemt kode og "Region10"/"region10" som standard
     for k_id, k_info in st.session_state['konsulenter'].items():
-        k_navn_fuld = k_info["navn"].strip()
-        k_navn_fuld_lower = k_navn_fuld.lower()
-        k_fornavn_lower = k_navn_fuld_lower.split(" ")[0]
-        gemt_kode = st.session_state['bruger_koder'].get(k_navn_fuld, "Region10")
-        if (b_clean == k_navn_fuld_lower or b_clean == k_fornavn_lower) and (k_clean == gemt_kode or k_clean.lower() == "region10"):
+        k_navn = k_info["navn"]
+        gemt_kode = st.session_state['bruger_koder'].get(k_navn, "Region10")
+        if b_clean.lower() == k_navn.lower() and (k_clean == gemt_kode or k_clean.lower() == "region10"):
             st.session_state['logget_ind'] = True
             st.session_state['bruger_rolle'] = "konsulent"
-            st.session_state['bruger_navn'] = k_navn_fuld
+            st.session_state['bruger_navn'] = k_navn
             st.session_state['valgt_konsulent_id_login'] = k_id
             return True
     return False
@@ -132,16 +136,13 @@ def hent_zone_og_farve(pnr):
     elif 8000 <= pnr_int <= 8999: return "Østjylland", "🔴"
     return "Nordjylland", "⚫"
 
-# --- RUTE MOTOR (8+2 BUFFER) ---
+# --- RUTE MOTOR ---
 def kør_rullende_kalender_motor():
     idag = datetime.now()
     start_mandag = idag - timedelta(days=idag.weekday())
     st.session_state['aftaler'] = []
-    
-    # BUFFER: AUTOMATISK_LOFT = 8, MAX_LOFT = 10
     AUTOMATISK_LOFT = 8
-    MAX_LOFT = 10 
-    
+    MAX_LOFT = 10
     global_tæller = {}
 
     for uge_frem in range(0, 24):
@@ -216,7 +217,7 @@ def kør_rullende_kalender_motor():
 if not st.session_state['logget_ind']:
     st.title("🔐 Ruteplanlægger Pro - Login")
     with st.form("login_form"):
-        u_input = st.text_input("Brugernavn (Fornavn eller fulde navn)")
+        u_input = st.text_input("Brugernavn")
         p_input = st.text_input("Adgangskode", type="password")
         if st.form_submit_button("Log ind"):
             if tjek_login(u_input, p_input): st.rerun()
@@ -228,7 +229,7 @@ st.sidebar.markdown(f"👤 Bruger: **{st.session_state['bruger_navn']}**")
 if st.sidebar.button("Log ud 🔓"):
     st.session_state['logget_ind'] = False; st.rerun()
 
-# --- EXCEL UPLOAD ---
+# --- EXCEL UPLOAD (KUN ADMIN) ---
 if st.session_state['bruger_rolle'] == "admin":
     st.sidebar.header("📂 Admin: Excel Upload")
     uploaded_file = st.sidebar.file_uploader("Upload kundeliste", type=["xlsx", "xls"])
@@ -265,6 +266,7 @@ if st.session_state['bruger_rolle'] == "admin":
                 st.rerun()
         except Exception as e: st.sidebar.error(f"Fejl: {e}")
 
+    # --- ADMIN: KODE-ADMINISTRATION ---
     st.sidebar.markdown("---")
     st.sidebar.header("🔑 Admin: Rediger Koder")
     kode_muligheder = ["Administrator", "Casper Valdemar"]
@@ -283,7 +285,7 @@ if st.session_state['bruger_rolle'] == "admin":
 if len(st.session_state['kunder']) > 0 and len(st.session_state['aftaler']) == 0:
     kør_rullende_kalender_motor()
 
-# --- VISNING ---
+# --- VISNINGS-FILTER ---
 er_læse_bruger = False
 if st.session_state['bruger_rolle'] == "admin" or st.session_state['bruger_rolle'] == "chef":
     if st.session_state['bruger_rolle'] == "chef": er_læse_bruger = True
@@ -295,6 +297,7 @@ else:
     valgt_konsulent_id = st.session_state['valgt_konsulent_id_login']
     konsulent_navn = st.session_state['bruger_navn']
 
+# RUTEDAGE
 if not er_læse_bruger:
     st.sidebar.markdown("---")
     st.sidebar.header("⚙️ Indstillinger")
@@ -312,16 +315,21 @@ sorterede_uger = sorted(list({a["uge_id"] for a in st.session_state['aftaler']})
 visnings_uger = sorterede_uger[:16] if len(sorterede_uger) > 16 else sorterede_uger
 valgt_uge = st.sidebar.selectbox("Vælg uge:", options=visnings_uger if visnings_uger else ["Ingen uger"])
 
+# --- HOVEDSKÆRM ---
 st.title("🗺️ Ruteplanlægger Pro")
 
 if len(st.session_state['kunder']) == 0:
     st.warning("⚠️ Ingen data i skyen endnu. Admin skal uploade listen.")
 else:
-    if er_læse_bruger: st.info("ℹ️ Overordnet leder (Casper Valdemar) — Kun kigge-adgang.")
+    if er_læse_bruger:
+        st.info("ℹ️ Overordnet leder (Casper Valdemar) — Kun kigge-adgang.")
+    
     st.subheader(f"📅 {konsulent_navn} — {valgt_uge}")
     st.markdown("---")
 
     aktuelle_aftaler = [a for a in st.session_state['aftaler'] if int(a["konsulent_id"]) == int(valgt_konsulent_id) and a["uge_id"] == valgt_uge]
+    
+    # 5 Kolonner til ugedagene
     visnings_slots = st.columns(5)
 
     for i, dag in enumerate(ALLE_DAGE_GLOBAL):
@@ -331,19 +339,30 @@ else:
                 st.caption("Lukket")
             else:
                 dag_aftaler = sorted([a for a in aktuelle_aftaler if a["dag"] == dag], key=lambda x: str(x["postnr"]))
-                # Viser nu antallet ud af 10 (MAX_LOFT)
-                st.markdown(f"### **{dag[:3]}.** <span style='font-size:13px; color:gray;'>({len(dag_aftaler)}/10)</span>", unsafe_allow_html=True)
+                st.markdown(f"### **{dag[:3]}.** <span style='font-size:13px; color:gray;'>({len(dag_aftaler)}/8)</span>", unsafe_allow_html=True)
                 st.markdown("---")
                 
                 for _idx, _aftale in enumerate(dag_aftaler):
                     zone, farve = hent_zone_og_farve(_aftale["postnr"])
+                    
+                    # Flot, strømlinet og ren kundeboks
                     with st.container(border=True):
                         st.markdown(f"<p style='margin:0px; font-size:13px; font-weight:bold; line-height:1.2;'>{farve} {_aftale['kundenavn']}</p>", unsafe_allow_html=True)
                         st.markdown(f"<p style='margin:2px 0px 6px 0px; font-size:11px; color:gray;'>📍 {_aftale['postnr']} {_aftale['by']}</p>", unsafe_allow_html=True)
+                        
+                        # Dropdown menu til lynhurtig flytning af rute
                         if not er_læse_bruger:
                             try: nuværende_idx = valgte_dage.index(dag)
                             except: nuværende_idx = 0
-                            valgt_ny_dag = st.selectbox("Flyt til:", options=valgte_dage, index=nuværende_idx, key=f"select-{_aftale['id']}-{_idx}", label_visibility="collapsed")
+                            
+                            valgt_ny_dag = st.selectbox(
+                                "Flyt til:",
+                                options=valgte_dage,
+                                index=nuværende_idx,
+                                key=f"select-{_aftale['id']}-{_idx}",
+                                label_visibility="collapsed"
+                            )
+                            
                             if valgt_ny_dag != dag:
                                 st.session_state['manuelle_flytninger'][_aftale["id"]] = valgt_ny_dag
                                 gem_data_til_disken()
