@@ -361,7 +361,7 @@ else:
                                 label_visibility="collapsed"
                             )
                             
-                           if valgt_ny_dag != dag:
+                        if valgt_ny_dag != dag:
                                 st.session_state['manuelle_flytninger'][_aftale["id"]] = valgt_ny_dag
                                 gem_data_til_disken()
                                 kør_rullende_kalender_motor()
