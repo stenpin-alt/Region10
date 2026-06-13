@@ -146,43 +146,70 @@ def hent_zone_og_farve(pnr):
 
 # --- RUTE MOTOR ---
 def kør_rullende_kalender_motor():
-    # Nulstil aftaler
     st.session_state['aftaler'] = []
+    idag = datetime.now()
+    start_mandag = idag - timedelta(days=idag.weekday())
     
-    # 1. Hent data
-    kunder = st.session_state['kunder']
-    manuelle = st.session_state['manuelle_flytninger']
-    
-    # 2. Definer grænser
     AUTO_LOFT = 8
     TOTAL_LOFT = 10
-    
-    # 3. Kør igennem uger og konsulenter
+    global_tæller = {}
+
     for uge_frem in range(0, 24):
-        # (Din nuværende logik for uge-beregning her...)
-        # ...
+        mål_mandag = start_mandag + timedelta(weeks=uge_frem)
+        uge_id = f"{mål_mandag.year}-Uge{mål_mandag.isocalendar()[1]}"
         
-        # Opret en tæller for denne uge/konsulent
-        # Tæller skal gemme, hvor mange kunder der er per dag
-        tæller = {d: 0 for d in ALLE_DAGE_GLOBAL}
-        
-        # A: Placer MANUELLE først (de tæller op til 10)
-        for kunde in kunder:
-            nøgle = f"{kunde['id']}-{uge_id}"
-            if nøgle in manuelle:
-                dag = manuelle[nøgle]
-                if tæller[dag] < TOTAL_LOFT:
-                    tæller[dag] += 1
-                    st.session_state['aftaler'].append({**kunde, "kundenavn": kunde["navn"], "dag": dag, ...})
-        
-        # B: Placer AUTOMATISKE (de tæller kun op til 8)
-        for kunde in kunder:
-            # Tjek om kunde allerede er placeret (tjek mod st.session_state['aftaler'])
-            if ikke_allerede_placeret(kunde, uge_id):
-                for dag in foretrukne_dage:
-                    if tæller[dag] < AUTO_LOFT:
-                        tæller[dag] += 1
-                        st.session_state['aftaler'].append(...)
+        if uge_id not in global_tæller: global_tæller[uge_id] = {}
+
+        for k_id, k_info in st.session_state['konsulenter'].items():
+            if k_id not in global_tæller[uge_id]:
+                global_tæller[uge_id][k_id] = {d: 0 for d in ALLE_DAGE_GLOBAL}
+            
+            kunder_i_uge = []
+            for kunde in st.session_state['kunder']:
+                if int(kunde["konsulent_id"]) == int(k_id):
+                    uge_nummer = mål_mandag.isocalendar()[1]
+                    frekvens = float(kunde["frekvens"])
+                    if (frekvens >= 1.0) or (frekvens == 0.5 and uge_nummer % 2 == 0) or (frekvens == 0.25 and uge_nummer % 4 == 1):
+                        kunder_i_uge.append(kunde)
+
+            # 1. PRIORITET: Håndter manuelle flytninger
+            for kunde in kunder_i_uge[:]:
+                unik_nøgle = f"{kunde['id']}-{uge_id}"
+                if unik_nøgle in st.session_state['manuelle_flytninger']:
+                    valgt_dag = st.session_state['manuelle_flytninger'][unik_nøgle]
+                    if global_tæller[uge_id][k_id][valgt_dag] < TOTAL_LOFT:
+                        global_tæller[uge_id][k_id][valgt_dag] += 1
+                        st.session_state['aftaler'].append({
+                            "id": unik_nøgle, 
+                            "kunde_id": kunde["id"], 
+                            "kundenavn": kunde["navn"],
+                            "by": kunde["by"], 
+                            "postnr": kunde["postnr"], 
+                            "konsulent_id": k_id,
+                            "uge_id": uge_id, 
+                            "dag": valgt_dag
+                        })
+                        kunder_i_uge.remove(kunde)
+
+            # 2. AUTOMATISK: Placer resten
+            konsulent_arbejdsdage = st.session_state['arbejdsdage'].get(k_id, ALLE_DAGE_GLOBAL)
+            bopæl_pnr = BOPÆL_POSTNUMRE.get(k_info["navn"], 4000)
+            kunder_i_uge.sort(key=lambda x: abs(int(str(x["postnr"])) - bopæl_pnr))
+
+            for kunde in kunder_i_uge:
+                for dag in konsulent_arbejdsdage:
+                    if global_tæller[uge_id][k_id][dag] < AUTO_LOFT:
+                        global_tæller[uge_id][k_id][dag] += 1
+                        st.session_state['aftaler'].append({
+                            "id": f"{kunde['id']}-{uge_id}", 
+                            "kunde_id": kunde["id"], 
+                            "kundenavn": kunde["navn"],
+                            "by": kunde["by"], 
+                            "postnr": kunde["postnr"], 
+                            "konsulent_id": k_id,
+                            "uge_id": uge_id, 
+                            "dag": dag
+                        })
                         break
 # --- LOGIN SKÆRM ---
 if not st.session_state['logget_ind']:
