@@ -3,20 +3,18 @@ import pandas as pd
 from datetime import datetime, timedelta
 import os
 
-st.set_page_config(page_title="Ruteplanlægger Pro", layout="wide")
-
-# CSS-optimering med flotte lodrette skillelinjer mellem ugedagene
 st.markdown("""
     <style>
-        /* Tvinger baggrundsfarve på alle kolonner */
-        [data-testid="column"]:nth-of-type(odd) {
-            background-color: #f2f2f2 !important;
-            padding: 10px !important;
-            border-radius: 8px !important;
+        /* Målretter den vertikale blok, som st.columns opretter */
+        [data-testid="column"] > div {
+            background-color: #f9f9f9;
+            padding: 15px;
+            border-radius: 10px;
+            border: 1px solid #e0e0e0;
         }
-        [data-testid="column"]:nth-of-type(even) {
-            background-color: #ffffff !important;
-            padding: 10px !important;
+        /* Gør så hver anden kolonne er hvid for kontrast */
+        [data-testid="column"]:nth-of-type(even) > div {
+            background-color: #ffffff;
         }
     </style>
 """, unsafe_allow_html=True)
