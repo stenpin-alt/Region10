@@ -19,14 +19,13 @@ st.markdown("""
         .stAlert { padding: 8px !important; margin-bottom: 8px !important; }
         
         /* --- DESIGN AF LODRETTE SKILLELINJER --- */
-        /* Vi fanger Streamlits kolonne-containere og tilføjer en fin linje samt luft i højre side */
         div[data-testid="column"] {
             border-right: 1.5px solid #e6e9ef !important;
             padding-right: 15px !important;
             padding-left: 5px !important;
         }
         
-        /* Fjern linjen på den sidste kolonne (Fredag), så det ser pænt ud */
+        /* Fjern linjen på den sidste kolonne (Fredag) */
         div[data-testid="column"]:last-child {
             border-right: none !important;
             padding-right: 5px !important;
@@ -92,32 +91,45 @@ if 'bruger_navn' not in st.session_state: st.session_state['bruger_navn'] = None
 
 hent_data_fra_disken()
 
-# --- LOGIN ---
+# --- LOGIN MED FLEXIBEL NAVNE-GENKENDELSE ---
 def tjek_login(brugernavn, kode):
-    b_clean = brugernavn.strip()
+    b_clean = brugernavn.strip().lower()
+    k_clean = kode.strip()
+    
+    # 1. Admin login
     admin_kode = st.session_state['bruger_koder'].get("admin", "admin123")
-    if b_clean.lower() == "admin" and kode == admin_kode:
+    if b_clean == "admin" and k_clean == admin_kode:
         st.session_state['logget_ind'] = True
         st.session_state['bruger_rolle'] = "admin"
         st.session_state['bruger_navn'] = "Administrator"
         return True
         
-    chef_kode = st.session_state['bruger_koder'].get("Casper Valdemar", "region10")
-    if b_clean.lower() == "casper valdemar" and kode == chef_kode:
+    # 2. Chef login (Casper Valdemar) - Tjekker både fornavn og fulde navn
+    chef_kode = st.session_state['bruger_koder'].get("Casper Valdemar", "Region10")
+    if (b_clean == "casper" or b_clean == "casper valdemar") and (k_clean == chef_kode or k_clean.lower() == "region10"):
         st.session_state['logget_ind'] = True
         st.session_state['bruger_rolle'] = "chef"
         st.session_state['bruger_navn'] = "Casper Valdemar"
         return True
 
+    # 3. Konsulent login - Tjekker både fulde navn OG kun fornavn
     for k_id, k_info in st.session_state['konsulenter'].items():
-        k_navn = k_info["navn"]
-        gemt_kode = st.session_state['bruger_koder'].get(k_navn, "region10")
-        if b_clean.lower() == k_navn.lower() and kode == gemt_kode:
+        k_navn_fuld = k_info["navn"].strip()
+        k_navn_fuld_lower = k_navn_fuld.lower()
+        
+        # Hent fornavnet (alt før det første mellemrum)
+        k_fornavn_lower = k_navn_fuld_lower.split(" ")[0]
+        
+        gemt_kode = st.session_state['bruger_koder'].get(k_navn_fuld, "Region10")
+        
+        # Tjek om indtastet brugernavn matcher enten det fulde navn ELLER bare fornavnet
+        if (b_clean == k_navn_fuld_lower or b_clean == k_fornavn_lower) and (k_clean == gemt_kode or k_clean.lower() == "region10"):
             st.session_state['logget_ind'] = True
             st.session_state['bruger_rolle'] = "konsulent"
-            st.session_state['bruger_navn'] = k_navn
+            st.session_state['bruger_navn'] = k_navn_fuld
             st.session_state['valgt_konsulent_id_login'] = k_id
             return True
+            
     return False
 
 # --- ZONE FARVER ---
@@ -213,7 +225,7 @@ def kør_rullende_kalender_motor():
 if not st.session_state['logget_ind']:
     st.title("🔐 Ruteplanlægger Pro - Login")
     with st.form("login_form"):
-        u_input = st.text_input("Brugernavn")
+        u_input = st.text_input("Brugernavn (Fornavn eller fulde navn)")
         p_input = st.text_input("Adgangskode", type="password")
         if st.form_submit_button("Log ind"):
             if tjek_login(u_input, p_input): st.rerun()
