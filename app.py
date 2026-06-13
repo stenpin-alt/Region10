@@ -137,80 +137,56 @@ def kør_rullende_kalender_motor():
     idag = datetime.now()
     start_mandag = idag - timedelta(days=idag.weekday())
     st.session_state['aftaler'] = []
-    
-    # BUFFER: AUTOMATISK_LOFT = 8, MAX_LOFT = 10
     AUTOMATISK_LOFT = 8
     MAX_LOFT = 10 
     
     global_tæller = {}
 
+    # 1. Identificer alle kunder der skal besøges i de næste 24 uger
     for uge_frem in range(0, 24):
         mål_mandag = start_mandag + timedelta(weeks=uge_frem)
         uge_nummer = mål_mandag.isocalendar()[1]
         uge_id = f"{mål_mandag.year}-Uge{uge_nummer}"
         if uge_id not in global_tæller: global_tæller[uge_id] = {}
-
+        
+        # Opret en liste over alle kunder og deres status
         for k_id, k_info in st.session_state['konsulenter'].items():
-            k_navn = k_info["navn"]
-            bopæl_pnr = BOPÆL_POSTNUMRE.get(k_navn, 4000)
-            konsulent_arbejdsdage = st.session_state['arbejdsdage'].get(k_id, ALLE_DAGE_GLOBAL)
-            if not konsulent_arbejdsdage: konsulent_arbejdsdage = ALLE_DAGE_GLOBAL
+            if k_id not in global_tæller[uge_id]: global_tæller[uge_id][k_id] = {d: 0 for d in ALLE_DAGE_GLOBAL}
             
-            if k_id not in global_tæller[uge_id]:
-                global_tæller[uge_id][k_id] = {d: 0 for d in ALLE_DAGE_GLOBAL}
-                
-            postnummer_grupper = {}
+            kunder_i_uge = []
             for kunde in st.session_state['kunder']:
                 if int(kunde["konsulent_id"]) == int(k_id):
+                    # Tjek frekvens...
                     frekvens = float(kunde["frekvens"])
-                    skal_besøges = False
-                    if frekvens >= 1.0: skal_besøges = True
-                    elif frekvens == 0.5 and uge_nummer % 2 == 0: skal_besøges = True
-                    elif frekvens == 0.25 and uge_nummer % 4 == 1: skal_besøges = True
-                    
-                    if skal_besøges:
-                        try: p_int = int(''.join(filter(str.isdigit, str(kunde["postnr"]))))
-                        except: p_int = bopæl_pnr
-                        if p_int not in postnummer_grupper: postnummer_grupper[p_int] = []
-                        postnummer_grupper[p_int].append(kunde)
-            
-            sorterede_postnumre = sorted(list(postnummer_grupper.keys()), key=lambda p: abs(p - bopæl_pnr))
-            aktuel_dag_idx = 0
-            
-            for pnr in sorterede_postnumre:
-                for kunde in postnummer_grupper[pnr]:
-                    placeret = False
-                    aktuel_uge_frem = uge_frem
-                    
-                    while not placeret and aktuel_uge_frem < 24:
-                        tjek_mandag = start_mandag + timedelta(weeks=aktuel_uge_frem)
-                        tjek_uge_id = f"{tjek_mandag.year}-Uge{tjek_mandag.isocalendar()[1]}"
-                        if tjek_uge_id not in global_tæller: global_tæller[tjek_uge_id] = {}
-                        if k_id not in global_tæller[tjek_uge_id]: global_tæller[tjek_uge_id][k_id] = {d: 0 for d in ALLE_DAGE_GLOBAL}
-                        
-                        unik_nøgle = f"{kunde['id']}-{tjek_uge_id}"
-                        
-                        if unik_nøgle in st.session_state['manuelle_flytninger']:
-                            v_dag = st.session_state['manuelle_flytninger'][unik_nøgle]
-                            if global_tæller[tjek_uge_id][k_id][v_dag] < MAX_LOFT:
-                                global_tæller[tjek_uge_id][k_id][v_dag] += 1
-                                placeret = True; valgt_dag = v_dag; break
-                        
-                        for forsøg in range(len(konsulent_arbejdsdage)):
-                            test_dag = konsulent_arbejdsdage[(aktuel_dag_idx + forsøg) % len(konsulent_arbejdsdage)]
-                            if global_tæller[tjek_uge_id][k_id][test_dag] < AUTOMATISK_LOFT:
-                                valgt_dag = test_dag
-                                aktuel_dag_idx = konsulent_arbejdsdage.index(test_dag)
-                                global_tæller[tjek_uge_id][k_id][valgt_dag] += 1
-                                placeret = True; break
-                        
-                        if placeret:
-                            st.session_state['aftaler'].append({
-                                "id": unik_nøgle, "kunde_id": kunde["id"], "kundenavn": kunde["navn"],
-                                "by": kunde["by"], "postnr": kunde["postnr"], "konsulent_id": k_id,
-                                "uge_id": tjek_uge_id, "dag": valgt_dag
-                            })
-                        else: aktuel_uge_frem += 1
+                    if (frekvens >= 1.0) or (frekvens == 0.5 and uge_nummer % 2 == 0) or (frekvens == 0.25 and uge_nummer % 4 == 1):
+                        kunder_i_uge.append(kunde)
+
+            # 2. HÅNDTÉR MANUELLE FLYTNINGER FØRST (Lås dem fast)
+            for kunde in kunder_i_uge[:]:
+                unik_nøgle = f"{kunde['id']}-{uge_id}"
+                if unik_nøgle in st.session_state['manuelle_flytninger']:
+                    man_dag = st.session_state['manuelle_flytninger'][unik_nøgle]
+                    global_tæller[uge_id][k_id][man_dag] += 1
+                    st.session_state['aftaler'].append({
+                        "id": unik_nøgle, "kunde_id": kunde["id"], "kundenavn": kunde["navn"],
+                        "by": kunde["by"], "postnr": kunde["postnr"], "konsulent_id": k_id,
+                        "uge_id": uge_id, "dag": man_dag
+                    })
+                    kunder_i_uge.remove(kunde) # Fjern fra listen så de ikke placeres igen
+
+            # 3. PLACÉR RESTEN AUTOMATISK
+            konsulent_arbejdsdage = st.session_state['arbejdsdage'].get(k_id, ALLE_DAGE_GLOBAL)
+            for kunde in kunder_i_uge:
+                placeret = False
+                for dag in konsulent_arbejdsdage:
+                    if global_tæller[uge_id][k_id][dag] < AUTOMATISK_LOFT:
+                        global_tæller[uge_id][k_id][dag] += 1
+                        st.session_state['aftaler'].append({
+                            "id": f"{kunde['id']}-{uge_id}", "kunde_id": kunde["id"], "kundenavn": kunde["navn"],
+                            "by": kunde["by"], "postnr": kunde["postnr"], "konsulent_id": k_id,
+                            "uge_id": uge_id, "dag": dag
+                        })
+                        placeret = True; break
 
 # --- LOGIN SKÆRM ---
 if not st.session_state['logget_ind']:
