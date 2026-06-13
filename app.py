@@ -330,7 +330,8 @@ else:
                     
                     # Flot, strømlinet og ren kundeboks
                     with st.container(border=True):
-                        st.markdown(f"<p style='margin:0px; font-size:13px; font-weight:bold; line-height:1.2;'>{farve} {_aftale['kundenavn']}</p>", unsafe_allow_html=True)
+                    navn = _aftale.get('kundenavn', _aftale.get('navn', 'Ukendt kunde'))
+                    st.markdown(f"<p style='margin:0px; font-size:13px; font-weight:bold; line-height:1.2;'>{farve} {na
                         st.markdown(f"<p style='margin:2px 0px 6px 0px; font-size:11px; color:gray;'>📍 {_aftale['postnr']} {_aftale['by']}</p>", unsafe_allow_html=True)
                         
                         # Dropdown menu til lynhurtig flytning af rute
