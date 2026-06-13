@@ -91,7 +91,23 @@ if 'logget_ind' not in st.session_state: st.session_state['logget_ind'] = False
 if 'bruger_rolle' not in st.session_state: st.session_state['bruger_rolle'] = None
 if 'bruger_navn' not in st.session_state: st.session_state['bruger_navn'] = None
 
-hent_data_fra_disken()
+def hent_data_fra_disken():
+    if os.path.exists(FIL_KONSULENTER) and not st.session_state['konsulenter']:
+        df_kons = pd.read_csv(FIL_KONSULENTER)
+        st.session_state['konsulenter'] = {int(r["id"]): {"navn": str(r["navn"])} for _, r in df_kons.iterrows()}
+    
+    if os.path.exists(FIL_KUNDER) and not st.session_state['kunder']:
+        df_kund = pd.read_csv(FIL_KUNDER)
+        st.session_state['kunder'] = df_kund.to_dict(orient="records")
+    
+    if os.path.exists(FIL_FLYTNINGER):
+        df_flyt = pd.read_csv(FIL_FLYTNINGER)
+        # Her sørger vi for, at flytninger bliver læst ind som en dictionary
+        st.session_state['manuelle_flytninger'] = {str(r["id"]): str(r["dag"]) for _, r in df_flyt.iterrows()}
+    
+    if os.path.exists(FIL_KODER):
+        df_koder = pd.read_csv(FIL_KODER)
+        st.session_state['bruger_koder'] = {str(r["navn"]): str(r["kode"]) for _, r in df_koder.iterrows()}
 
 # --- LOGIN MED FLEXIBEL NAVNE-GENKENDELSE ---
 def tjek_login(brugernavn, kode):
@@ -198,23 +214,6 @@ def kør_rullende_kalender_motor():
                     # så vi fjerner den fra listen, så den ikke bliver placeret automatisk senere
                     kunder_i_uge.remove(kunde)
 
-        def hent_data_fra_disken():
-    if os.path.exists(FIL_KONSULENTER) and not st.session_state['konsulenter']:
-        df_kons = pd.read_csv(FIL_KONSULENTER)
-        st.session_state['konsulenter'] = {int(r["id"]): {"navn": str(r["navn"])} for _, r in df_kons.iterrows()}
-    
-    if os.path.exists(FIL_KUNDER) and not st.session_state['kunder']:
-        df_kund = pd.read_csv(FIL_KUNDER)
-        st.session_state['kunder'] = df_kund.to_dict(orient="records")
-    
-    if os.path.exists(FIL_FLYTNINGER):
-        df_flyt = pd.read_csv(FIL_FLYTNINGER)
-        # Her sørger vi for, at flytninger bliver læst ind som en dictionary
-        st.session_state['manuelle_flytninger'] = {str(r["id"]): str(r["dag"]) for _, r in df_flyt.iterrows()}
-    
-    if os.path.exists(FIL_KODER):
-        df_koder = pd.read_csv(FIL_KODER)
-        st.session_state['bruger_koder'] = {str(r["navn"]): str(r["kode"]) for _, r in df_koder.iterrows()}
 
             # 2. AUTOMATISK: Placer resten
             konsulent_arbejdsdage = st.session_state['arbejdsdage'].get(k_id, ALLE_DAGE_GLOBAL)
