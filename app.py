@@ -5,6 +5,22 @@ import os
 
 st.set_page_config(page_title="Ruteplanlægger Pro", layout="wide")
 
+# CSS til at fjerne unødig spildplads og gøre elementerne meget mere kompakte på mobilen
+st.markdown("""
+    <style>
+        .block-container { padding-top: 1rem !important; padding-bottom: 1rem !important; }
+        [data-testid="stVerticalBlock"] > div { padding-bottom: 0px !important; margin-bottom: 0px !important; }
+        div.stButton > button {
+            padding: 2px 4px !important;
+            font-size: 12px !important;
+            min-height: 24px !important;
+            height: 24px !important;
+            margin: 0px !important;
+        }
+        .stAlert { padding: 8px !important; margin-bottom: 8px !important; }
+    </style>
+""", unsafe_allow_html=True)
+
 # Globale variabler
 ALLE_DAGE_GLOBAL = ["Mandag", "Tirsdag", "Onsdag", "Torsdag", "Fredag"]
 DAG_KORT = {"Mandag": "Ma", "Tirsdag": "Ti", "Onsdag": "On", "Torsdag": "To", "Fredag": "Fr"}
@@ -64,11 +80,9 @@ if 'bruger_navn' not in st.session_state: st.session_state['bruger_navn'] = None
 
 hent_data_fra_disken()
 
-# --- LOGIN FUNKTION MED REGION10 SOM STANDARD ---
+# --- LOGIN ---
 def tjek_login(brugernavn, kode):
     b_clean = brugernavn.strip()
-    
-    # 1. Tjek Admin (bruger ændret kode, eller falder tilbage til admin123)
     admin_kode = st.session_state['bruger_koder'].get("admin", "admin123")
     if b_clean.lower() == "admin" and kode == admin_kode:
         st.session_state['logget_ind'] = True
@@ -76,7 +90,6 @@ def tjek_login(brugernavn, kode):
         st.session_state['bruger_navn'] = "Administrator"
         return True
         
-    # 2. Tjek Chef-bruger (Casper Valdemar)
     chef_kode = st.session_state['bruger_koder'].get("Casper Valdemar", "region10")
     if b_clean.lower() == "casper valdemar" and kode == chef_kode:
         st.session_state['logget_ind'] = True
@@ -84,18 +97,15 @@ def tjek_login(brugernavn, kode):
         st.session_state['bruger_navn'] = "Casper Valdemar"
         return True
 
-    # 3. Tjek Konsulenter (bruger ændret kode, eller falder tilbage til region10)
     for k_id, k_info in st.session_state['konsulenter'].items():
         k_navn = k_info["navn"]
         gemt_kode = st.session_state['bruger_koder'].get(k_navn, "region10")
-        
         if b_clean.lower() == k_navn.lower() and kode == gemt_kode:
             st.session_state['logget_ind'] = True
             st.session_state['bruger_rolle'] = "konsulent"
             st.session_state['bruger_navn'] = k_navn
             st.session_state['valgt_konsulent_id_login'] = k_id
             return True
-            
     return False
 
 # --- ZONE FARVER ---
@@ -110,7 +120,7 @@ def hent_zone_og_farve(pnr):
     elif 8000 <= pnr_int <= 8999: return "Østjylland", "🔴"
     return "Nordjylland", "⚫"
 
-# --- SMART KLYNGE MOTOR ---
+# --- RUTE MOTOR ---
 def kør_rullende_kalender_motor():
     idag = datetime.now()
     start_mandag = idag - timedelta(days=idag.weekday())
@@ -191,15 +201,15 @@ def kør_rullende_kalender_motor():
 if not st.session_state['logget_ind']:
     st.title("🔐 Ruteplanlægger Pro - Login")
     with st.form("login_form"):
-        u_input = st.text_input("Brugernavn (Funde navn, 'Casper Valdemar' eller 'admin')")
+        u_input = st.text_input("Brugernavn")
         p_input = st.text_input("Adgangskode", type="password")
         if st.form_submit_button("Log ind"):
             if tjek_login(u_input, p_input): st.rerun()
-            else: st.error("Forkert login. Prøv igen eller kontakt administrator.")
+            else: st.error("Forkert login. Prøv igen.")
     st.stop()
 
 # --- SIDEBAR & LOGUD ---
-st.sidebar.markdown(f"👤 Rolle: **{st.session_state['bruger_navn']}**")
+st.sidebar.markdown(f"👤 Bruger: **{st.session_state['bruger_navn']}**")
 if st.sidebar.button("Log ud 🔓"):
     st.session_state['logget_ind'] = False; st.rerun()
 
@@ -240,14 +250,12 @@ if st.session_state['bruger_rolle'] == "admin":
                 st.rerun()
         except Exception as e: st.sidebar.error(f"Fejl: {e}")
 
-    # --- ADMIN: KODE-ADMINISTRATION (NU INKL. ADMIN SELV OG CHEF) ---
+    # --- ADMIN: KODE-ADMINISTRATION ---
     st.sidebar.markdown("---")
     st.sidebar.header("🔑 Admin: Rediger Koder")
-    
     kode_muligheder = ["Administrator", "Casper Valdemar"]
     if st.session_state['konsulenter']:
         kode_muligheder += [v["navn"] for v in st.session_state['konsulenter'].values()]
-        
     mål_bruger_valg = st.sidebar.selectbox("Vælg bruger:", options=kode_muligheder)
     ny_kode_input = st.sidebar.text_input("Ny adgangskode:", type="password", key="ny_kode_felt")
     if st.sidebar.button("Gem ny kode"):
@@ -255,30 +263,25 @@ if st.session_state['bruger_rolle'] == "admin":
             nøgle_navn = "admin" if mål_bruger_valg == "Administrator" else mål_bruger_valg
             st.session_state['bruger_koder'][nøgle_navn] = ny_kode_input.strip()
             gem_data_til_disken()
-            st.sidebar.success(f"Kode ændret for {mål_bruger_valg}!")
-        else:
-            st.sidebar.error("Koden må ikke være tom.")
+            st.sidebar.success(f"Kode ændret permanent!")
+        else: st.sidebar.error("Koden må ikke være tom.")
 
 if len(st.session_state['kunder']) > 0 and len(st.session_state['aftaler']) == 0:
     kør_rullende_kalender_motor()
 
-# --- RETTIGHEDSFILTER & DROPDOWNS TIL VISNING ---
+# --- VISNINGS-FILTER ---
 er_læse_bruger = False
-
 if st.session_state['bruger_rolle'] == "admin" or st.session_state['bruger_rolle'] == "chef":
-    if st.session_state['bruger_rolle'] == "chef":
-        er_læse_bruger = True # Låser knapperne for Casper, så han kun kan kigge
-        
-    if len(st.session_state['konsulenter']) > 0:
+    if st.session_state['bruger_rolle'] == "chef": er_læse_bruger = True
+    if st.session_state['konsulenter']:
         valgt_konsulent_id = st.sidebar.selectbox("Vis rute for:", options=list(st.session_state['konsulenter'].keys()), format_func=lambda x: st.session_state['konsulenter'][x]["navn"])
         konsulent_navn = st.session_state['konsulenter'][valgt_konsulent_id]["navn"]
-    else: valgt_konsulent_id = 1; konsulent_navn = "Ingen data i skyen"
+    else: valgt_konsulent_id = 1; konsulent_navn = "Ingen data"
 else:
     valgt_konsulent_id = st.session_state['valgt_konsulent_id_login']
     konsulent_navn = st.session_state['bruger_navn']
 
-# KONFIGURATION AF RUTEDAGE (KUN FOR ADMIN & KONSULENT)
-valgte_dage = ALLE_DAGE_GLOBAL
+# RUTEDAGE
 if not er_læse_bruger:
     st.sidebar.markdown("---")
     st.sidebar.header("⚙️ Indstillinger")
@@ -296,66 +299,51 @@ sorterede_uger = sorted(list({a["uge_id"] for a in st.session_state['aftaler']})
 visnings_uger = sorterede_uger[:16] if len(sorterede_uger) > 16 else sorterede_uger
 valgt_uge = st.sidebar.selectbox("Vælg uge:", options=visnings_uger if visnings_uger else ["Ingen uger"])
 
-# --- HOVEDSKÆRM: KALENDER ---
+# --- HOVEDSKÆRM ---
 st.title("🗺️ Ruteplanlægger Pro")
 
 if len(st.session_state['kunder']) == 0:
-    st.warning("⚠️ Ingen data i skyen endnu. Admin skal uploade listen i menuen til venstre.")
+    st.warning("⚠️ Ingen data i skyen endnu. Admin skal uploade listen.")
 else:
     if er_læse_bruger:
-        st.info("ℹ️ Du er logget ind som overordnet leder (Læsetilgang). Du kan frit skifte uge og konsulenter i menuen til venstre.")
+        st.info("ℹ️ Login: Læsetilgang (Casper Valdemar). Skift uge/konsulent i menuen til venstre.")
     
-    st.subheader(f"📅 Rute for: {konsulent_navn} — {valgt_uge}")
-    st.caption(f"🏠 Startbopæl: Postnummer {BOPÆL_POSTNUMRE.get(konsulent_navn, 'Ukendt')}")
+    st.subheader(f"📅 {konsulent_navn} — {valgt_uge}")
     st.markdown("---")
 
     aktuelle_aftaler = [a for a in st.session_state['aftaler'] if int(a["konsulent_id"]) == int(valgt_konsulent_id) and a["uge_id"] == valgt_uge]
     
-    skærm_layout = st.radio("Skærmvisning (Optimering):", ["💻 Computer (Gitter)", "📱 Mobiltelefon (Liste)"], horizontal=True, label_visibility="collapsed")
-
-    if skærm_layout == "💻 Computer (Gitter)":
-        visnings_slots = st.columns(5)
-    else:
-        visnings_slots = [st.container() for _ in range(5)]
+    # Automatisk og mere flydende kolonne-gitter (Hjælper markant på både højkant og vandret mobil)
+    visnings_slots = st.columns(len(ALLE_DAGE_GLOBAL))
 
     for i, dag in enumerate(ALLE_DAGE_GLOBAL):
         with visnings_slots[i]:
-            with st.container(border=True):
-                if dag not in valgte_dage:
-                    st.markdown(f"### 🛑 <span style='color:gray;'>~~{dag}~~</span>", unsafe_allow_html=True)
-                    st.caption("Ingen kørsel")
-                else:
-                    dag_aftaler = sorted([a for a in aktuelle_aftaler if a["dag"] == dag], key=lambda x: str(x["postnr"]))
-                    antal_besøg = len(dag_aftaler)
-                    status_tekst = f"{antal_besøg}/8 (+2)" if antal_besøg <= 8 else f"8/8 (+{antal_besøg-8} i buffer)"
+            if dag not in valgte_dage:
+                st.markdown(f"**🛑 {dag[:2]}** (Lukket)")
+            else:
+                dag_aftaler = sorted([a for a in aktuelle_aftaler if a["dag"] == dag], key=lambda x: str(x["postnr"]))
+                st.markdown(f"### **{dag[:3]}.** <span style='font-size:12px; color:gray;'>({len(dag_aftaler)}/8)</span>", unsafe_allow_html=True)
+                
+                for _idx, _aftale in enumerate(dag_aftaler):
+                    zone, farve = hent_zone_og_farve(_aftale["postnr"])
                     
-                    st.markdown(f"### 📅 {dag}")
-                    st.markdown(f"**`Status: {status_tekst}`**")
-                    st.markdown("---")
-                    
-                    if not dag_aftaler:
-                        st.info("Ingen besøg")
-                    
-                    for _idx, _aftale in enumerate(dag_aftaler):
-                        zone, farve = hent_zone_og_farve(_aftale["postnr"])
+                    # Ultrakompakt kundeboks
+                    with st.container(border=True):
+                        st.markdown(f"<p style='margin:0px; font-size:13px; font-weight:bold;'>{farve} {_aftale['kundenavn']}</p>", unsafe_allow_html=True)
+                        st.markdown(f"<p style='margin:0px; font-size:11px; color:gray;'>📍 {_aftale['postnr']} {_aftale['by']}</p>", unsafe_allow_html=True)
                         
-                        with st.container(border=True):
-                            st.markdown(f"**{farve} {_aftale['kundenavn']}**")
-                            st.caption(f"📍 {_aftale['postnr']} {_aftale['by']}")
-                            
-                            # KNAPPER SKJULES, HVIS DET ER CASPER VALDEMAR DER KIGGER MED
-                            if not er_læse_bruger:
-                                st.markdown("<p style='font-size:11px; margin-bottom:2px; color:gray;'>Flyt rute til:</p>", unsafe_allow_html=True)
-                                knap_kolonner = st.columns(len(valgte_dage))
-                                
-                                for k_idx, m_dag in enumerate(valgte_dage):
-                                    with knap_kolonner[k_idx]:
-                                        kort_navn = DAG_KORT.get(m_dag, m_dag[:2])
-                                        if m_dag == dag:
-                                            st.button(kort_navn, key=f"btn-{_aftale['id']}-{m_dag}-{_idx}", disabled=True, use_container_width=True)
-                                        else:
-                                            if st.button(kort_navn, key=f"btn-{_aftale['id']}-{m_dag}-{_idx}", use_container_width=True):
-                                                st.session_state['manuelle_flytninger'][_aftale["id"]] = m_dag
-                                                gem_data_til_disken()
-                                                kør_rullende_kalender_motor()
-                                                st.rerun()
+                        # Flotte, bittesmå inline-knapper direkte under teksten (ingen spildplads)
+                        if not er_læse_bruger:
+                            knap_kolonner = st.columns(len(valgte_dage))
+                            for k_idx, m_dag in enumerate(valgte_dage):
+                                with knap_kolonner[k_idx]:
+                                    kort_navn = DAG_KORT.get(m_dag, m_dag[:2])
+                                    if m_dag == dag:
+                                        # Nuværende dag er deaktiveret og markeret pænt
+                                        st.button(kort_navn, key=f"b-{_aftale['id']}-{m_dag}-{_idx}", disabled=True, use_container_width=True)
+                                    else:
+                                        if st.button(kort_navn, key=f"b-{_aftale['id']}-{m_dag}-{_idx}", use_container_width=True):
+                                            st.session_state['manuelle_flytninger'][_aftale["id"]] = m_dag
+                                            gem_data_til_disken()
+                                            kør_rullende_kalender_motor()
+                                            st.rerun()
