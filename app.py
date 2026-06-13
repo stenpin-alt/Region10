@@ -150,8 +150,10 @@ def kør_rullende_kalender_motor():
     start_mandag = idag - timedelta(days=idag.weekday())
     st.session_state['aftaler'] = []
     
-    # BUFFER: Vi sætter loftet til 10 for at give de +2 i fleksibilitet
-    LOFT = 10 
+    # Automatisk planlægning stopper ved 8. 
+    # Manuelt må vi gå op til 10.
+    AUTO_LOFT = 8
+    MAX_TOTAL_LOFT = 10
     
     global_tæller = {}
 
@@ -165,7 +167,6 @@ def kør_rullende_kalender_motor():
             if k_id not in global_tæller[uge_id]:
                 global_tæller[uge_id][k_id] = {d: 0 for d in ALLE_DAGE_GLOBAL}
             
-            # Find alle kunder der skal have besøg i denne uge
             kunder_i_uge = []
             for kunde in st.session_state['kunder']:
                 if int(kunde["konsulent_id"]) == int(k_id):
@@ -174,26 +175,24 @@ def kør_rullende_kalender_motor():
                     if (frekvens >= 1.0) or (frekvens == 0.5 and uge_nummer % 2 == 0) or (frekvens == 0.25 and uge_nummer % 4 == 1):
                         kunder_i_uge.append(kunde)
 
-            # 1. PRIORITET: Håndter manuelle flytninger først
+            # 1. PRIORITET: Håndter manuelle flytninger (TILLAD OP TIL 10)
             for kunde in kunder_i_uge[:]:
                 unik_nøgle = f"{kunde['id']}-{uge_id}"
                 if unik_nøgle in st.session_state['manuelle_flytninger']:
                     valgt_dag = st.session_state['manuelle_flytninger'][unik_nøgle]
-                    if global_tæller[uge_id][k_id][valgt_dag] < LOFT:
+                    if global_tæller[uge_id][k_id][valgt_dag] < MAX_TOTAL_LOFT:
                         global_tæller[uge_id][k_id][valgt_dag] += 1
                         st.session_state['aftaler'].append({**kunde, "kundenavn": kunde["navn"], "uge_id": uge_id, "dag": valgt_dag, "id": unik_nøgle})
                         kunder_i_uge.remove(kunde)
 
-            # 2. AUTOMATISK: Placer resten
+            # 2. AUTOMATISK: Placer resten (STOP VED 8)
             konsulent_arbejdsdage = st.session_state['arbejdsdage'].get(k_id, ALLE_DAGE_GLOBAL)
-            # Sorter efter postnummer (nærhed til bopæl)
             bopæl_pnr = BOPÆL_POSTNUMRE.get(k_info["navn"], 4000)
             kunder_i_uge.sort(key=lambda x: abs(int(str(x["postnr"])) - bopæl_pnr))
 
             for kunde in kunder_i_uge:
                 for dag in konsulent_arbejdsdage:
-                    # Brug samme LOFT (10) her for at sikre at de +2 pladser kan bruges automatisk
-                    if global_tæller[uge_id][k_id][dag] < LOFT:
+                    if global_tæller[uge_id][k_id][dag] < AUTO_LOFT:
                         global_tæller[uge_id][k_id][dag] += 1
                         st.session_state['aftaler'].append({**kunde, "kundenavn": kunde["navn"], "uge_id": uge_id, "dag": dag, "id": f"{kunde['id']}-{uge_id}"})
                         break
