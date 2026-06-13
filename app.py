@@ -312,7 +312,7 @@ else:
     valgte_dage = st.session_state['arbejdsdage'].get(valgt_konsulent_id, ALLE_DAGE_GLOBAL)
 
 sorterede_uger = sorted(list({a["uge_id"] for a in st.session_state['aftaler']}))
-visnings_uger = sorterede_uger[:16] if len(sorterede_uger) > 16 else sorterede_uger
+visnings_uger = sorterede_uger
 valgt_uge = st.sidebar.selectbox("Vælg uge:", options=visnings_uger if visnings_uger else ["Ingen uger"])
 
 # --- HOVEDSKÆRM ---
