@@ -5,27 +5,37 @@ import os
 
 st.set_page_config(page_title="Ruteplanlægger Pro", layout="wide")
 
-# --- CSS: Responsivt layout med skillelinjer ---
+# CSS-optimering med flotte lodrette skillelinjer mellem ugedagene
 st.markdown("""
     <style>
-        .block-container { padding-top: 1rem !important; }
+        .block-container { padding-top: 1rem !important; padding-bottom: 1rem !important; }
+        [data-testid="stVerticalBlock"] > div { padding-bottom: 0px !important; margin-bottom: 0px !important; }
         
-        /* Layout for kolonner med skillelinjer */
+        /* Gør dropdown-menuerne indeni kundekortene små og kompakte */
+        div.stSelectbox div[data-testid="stSelectboxWithDynamicOptions"] {
+            transform: scale(0.9);
+            transform-origin: left center;
+        }
+        .stAlert { padding: 8px !important; margin-bottom: 8px !important; }
+        
+        /* --- DESIGN AF LODRETTE SKILLELINJER --- */
         div[data-testid="column"] {
             border-right: 1.5px solid #e6e9ef !important;
             padding-right: 15px !important;
-            padding-left: 15px !important;
-            min-width: 220px !important; 
+            padding-left: 5px !important;
         }
-        div[data-testid="column"]:last-child { border-right: none !important; }
-
-        /* Kompakte dropdowns */
-        div.stSelectbox div[data-testid="stSelectboxWithDynamicOptions"] { transform: scale(0.9); transform-origin: left; }
+        
+        /* Fjern linjen på den sidste kolonne (Fredag) */
+        div[data-testid="column"]:last-child {
+            border-right: none !important;
+            padding-right: 5px !important;
+        }
     </style>
 """, unsafe_allow_html=True)
 
 # Globale variabler
 ALLE_DAGE_GLOBAL = ["Mandag", "Tirsdag", "Onsdag", "Torsdag", "Fredag"]
+
 BOPÆL_POSTNUMRE = {
     "Brian Felix Fabian": 4690, "Daniel Hemmingsen": 2730, "Carsten Bülow": 4000,
     "Morten Hedemand": 5210, "Allan Rechnagel": 6100, "Kristof": 4550,
@@ -36,70 +46,51 @@ BOPÆL_POSTNUMRE = {
 }
 
 # --- PERMANENT DATALAGRING ---
-FIL_KUNDER, FIL_KONSULENTER, FIL_FLYTNINGER, FIL_KODER = "gemt_kunder.csv", "gemt_konsulenter.csv", "gemt_flytninger.csv", "gemt_koder.csv"
+FIL_KUNDER = "gemt_kunder.csv"
+FIL_KONSULENTER = "gemt_konsulenter.csv"
+FIL_FLYTNINGER = "gemt_flytninger.csv"
+FIL_KODER = "gemt_koder.csv"
 
 def gem_data_til_disken():
-    if st.session_state['kunder']: pd.DataFrame(st.session_state['kunder']).to_csv(FIL_KUNDER, index=False)
-    if st.session_state['konsulenter']: pd.DataFrame([{"id": k, "navn": v["navn"]} for k, v in st.session_state['konsulenter'].items()]).to_csv(FIL_KONSULENTER, index=False)
-    if st.session_state['manuelle_flytninger']: pd.DataFrame([{"id": k, "dag": v} for k, v in st.session_state['manuelle_flytninger'].items()]).to_csv(FIL_FLYTNINGER, index=False)
-    if st.session_state['bruger_koder']: pd.DataFrame([{"navn": k, "kode": v} for k, v in st.session_state['bruger_koder'].items()]).to_csv(FIL_KODER, index=False)
+    if st.session_state['kunder']:
+        pd.DataFrame(st.session_state['kunder']).to_csv(FIL_KUNDER, index=False)
+    if st.session_state['konsulenter']:
+        df_kons = pd.DataFrame([{"id": k, "navn": v["navn"]} for k, v in st.session_state['konsulenter'].items()])
+        df_kons.to_csv(FIL_KONSULENTER, index=False)
+    if st.session_state['manuelle_flytninger']:
+        df_flyt = pd.DataFrame([{"id": k, "dag": v} for k, v in st.session_state['manuelle_flytninger'].items()])
+        df_flyt.to_csv(FIL_FLYTNINGER, index=False)
+    if st.session_state['bruger_koder']:
+        df_koder = pd.DataFrame([{"navn": k, "kode": v} for k, v in st.session_state['bruger_koder'].items()])
+        df_koder.to_csv(FIL_KODER, index=False)
 
 def hent_data_fra_disken():
     if os.path.exists(FIL_KONSULENTER) and not st.session_state['konsulenter']:
-        df = pd.read_csv(FIL_KONSULENTER); st.session_state['konsulenter'] = {int(r["id"]): {"navn": str(r["navn"])} for _, r in df.iterrows()}
-    if os.path.exists(FIL_KUNDER) and not st.session_state['kunder']: st.session_state['kunder'] = pd.read_csv(FIL_KUNDER).to_dict(orient="records")
-    if os.path.exists(FIL_FLYTNINGER) and not st.session_state['manuelle_flytninger']: st.session_state['manuelle_flytninger'] = {str(r["id"]): str(r["dag"]) for _, r in pd.read_csv(FIL_FLYTNINGER).iterrows()}
-    if os.path.exists(FIL_KODER): st.session_state['bruger_koder'] = {str(r["navn"]): str(r["kode"]) for _, r in pd.read_csv(FIL_KODER).iterrows()}
+        df_kons = pd.read_csv(FIL_KONSULENTER)
+        st.session_state['konsulenter'] = {int(r["id"]): {"navn": str(r["navn"])} for _, r in df_kons.iterrows()}
+    if os.path.exists(FIL_KUNDER) and not st.session_state['kunder']:
+        df_kund = pd.read_csv(FIL_KUNDER)
+        st.session_state['kunder'] = df_kund.to_dict(orient="records")
+    if os.path.exists(FIL_FLYTNINGER) and not st.session_state['manuelle_flytninger']:
+        df_flyt = pd.read_csv(FIL_FLYTNINGER)
+        st.session_state['manuelle_flytninger'] = {str(r["id"]): str(r["dag"]) for _, r in df_flyt.iterrows()}
+    if os.path.exists(FIL_KODER):
+        df_koder = pd.read_csv(FIL_KODER)
+        st.session_state['bruger_koder'] = {str(r["navn"]): str(r["kode"]) for _, r in df_koder.iterrows()}
 
 # --- INITIALISERING ---
-for k in ['konsulenter', 'kunder', 'aftaler', 'arbejdsdage', 'manuelle_flytninger', 'bruger_koder']:
-    if k not in st.session_state: st.session_state[k] = {} if k in ['konsulenter', 'arbejdsdage', 'manuelle_flytninger', 'bruger_koder'] else []
-if 'logget_ind' not in st.session_state: st.session_state.update({'logget_ind': False, 'bruger_rolle': None, 'bruger_navn': None})
+if 'konsulenter' not in st.session_state: st.session_state['konsulenter'] = {}
+if 'kunder' not in st.session_state: st.session_state['kunder'] = []
+if 'aftaler' not in st.session_state: st.session_state['aftaler'] = []
+if 'arbejdsdage' not in st.session_state: st.session_state['arbejdsdage'] = {}
+if 'manuelle_flytninger' not in st.session_state: st.session_state['manuelle_flytninger'] = {}
+if 'bruger_koder' not in st.session_state: st.session_state['bruger_koder'] = {}
+if 'logget_ind' not in st.session_state: st.session_state['logget_ind'] = False
+if 'bruger_rolle' not in st.session_state: st.session_state['bruger_rolle'] = None
+if 'bruger_navn' not in st.session_state: st.session_state['bruger_navn'] = None
+
 hent_data_fra_disken()
 
-# --- RUTE MOTOR (8+2 BUFFER) ---
-def kør_rullende_kalender_motor():
-    idag = datetime.now()
-    start_mandag = idag - timedelta(days=idag.weekday())
-    st.session_state['aftaler'] = []
-    AUTOMATISK_LOFT, MAX_LOFT = 8, 10 # Buffer på +2
-    global_tæller = {}
-
-    for uge_frem in range(0, 24):
-        mål_mandag = start_mandag + timedelta(weeks=uge_frem)
-        uge_id = f"{mål_mandag.year}-Uge{mål_mandag.isocalendar()[1]}"
-        if uge_id not in global_tæller: global_tæller[uge_id] = {}
-
-        for k_id, k_info in st.session_state['konsulenter'].items():
-            k_navn = k_info["navn"]
-            bopæl_pnr = BOPÆL_POSTNUMRE.get(k_navn, 4000)
-            konsulent_arbejdsdage = st.session_state['arbejdsdage'].get(k_id, ALLE_DAGE_GLOBAL)
-            if k_id not in global_tæller[uge_id]: global_tæller[uge_id][k_id] = {d: 0 for d in ALLE_DAGE_GLOBAL}
-                
-            postnummer_grupper = {}
-            for kunde in st.session_state['kunder']:
-                if int(kunde["konsulent_id"]) == int(k_id):
-                    # Frekvens-logik her...
-                    try: p_int = int(''.join(filter(str.isdigit, str(kunde["postnr"])))); postnummer_grupper.setdefault(p_int, []).append(kunde)
-                    except: pass
-            
-            sorterede_postnumre = sorted(list(postnummer_grupper.keys()), key=lambda p: abs(p - bopæl_pnr))
-            
-            for pnr in sorterede_postnumre:
-                for kunde in postnummer_grupper[pnr]:
-                    placeret = False
-                    for aktuel_uge_frem in range(uge_frem, 24):
-                        tjek_mandag = start_mandag + timedelta(weeks=aktuel_uge_frem)
-                        tjek_uge_id = f"{tjek_mandag.year}-Uge{tjek_mandag.isocalendar()[1]}"
-                        
-                        # Tjek mod MAX_LOFT
-                        for dag in konsulent_arbejdsdage:
-                            if global_tæller[tjek_uge_id].get(k_id, {}).get(dag, 0) < MAX_LOFT:
-                                global_tæller[tjek_uge_id].setdefault(k_id, {d: 0 for d in ALLE_DAGE_GLOBAL})[dag] += 1
-                                st.session_state['aftaler'].append({"kunde_id": kunde["id"], "kundenavn": kunde["navn"], "dag": dag, "uge_id": tjek_uge_id, "konsulent_id": k_id, "postnr": kunde["postnr"], "by": kunde["by"], "id": f"{kunde['id']}-{tjek_uge_id}"})
-                                placeret = True; break
-                        if placeret: break
-                            
 # --- LOGIN MED FLEXIBEL NAVNE-GENKENDELSE ---
 def tjek_login(brugernavn, kode):
     b_clean = brugernavn.strip().lower()
