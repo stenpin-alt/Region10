@@ -179,6 +179,8 @@ def kør_rullende_kalender_motor():
                 unik_nøgle = f"{kunde['id']}-{uge_id}"
                 if unik_nøgle in st.session_state['manuelle_flytninger']:
                     valgt_dag = st.session_state['manuelle_flytninger'][unik_nøgle]
+                    
+                    # Tjek om der er plads på den valgte dag
                     if global_tæller[uge_id][k_id][valgt_dag] < TOTAL_LOFT:
                         global_tæller[uge_id][k_id][valgt_dag] += 1
                         st.session_state['aftaler'].append({
@@ -188,12 +190,14 @@ def kør_rullende_kalender_motor():
                             "by": kunde["by"], 
                             "postnr": kunde["postnr"], 
                             "konsulent_id": k_id,
-                            "uge_id": tjek_uge_id, 
+                            "uge_id": uge_id, 
                             "dag": valgt_dag
                         })
-                    else:
-                        aktuel_uge_frem += 1
-                        kunder_i_uge.remove(kunde)
+                    
+                    # Kunden er nu behandlet (enten placeret eller ignoreret pga. loft), 
+                    # så vi fjerner den fra listen, så den ikke bliver placeret automatisk senere
+                    kunder_i_uge.remove(kunde)
+
 
             # 2. AUTOMATISK: Placer resten
             konsulent_arbejdsdage = st.session_state['arbejdsdage'].get(k_id, ALLE_DAGE_GLOBAL)
