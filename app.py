@@ -5,7 +5,7 @@ import os
 
 st.set_page_config(page_title="Convenience Ruteplanlægger", layout="wide",page_icon="logo.png" )
 st.sidebar.image("logo.png", use_container_width=True)
-
+st.write("Antal manuelle flytninger:", len(st.session_state['manuelle_flytninger']))
 
 # CSS-optimering med flotte lodrette skillelinjer mellem ugedagene
 st.markdown("""
@@ -168,8 +168,8 @@ def kør_rullende_kalender_motor():
     idag = datetime.now()
     start_mandag = idag - timedelta(days=idag.weekday())
     
-    AUTO_LOFT = 8
-    TOTAL_LOFT = 10
+    AUTOMATISK_LOFT = 8
+    MAX_LOFT = 10
     global_tæller = {}
 
     for uge_frem in range(0, 24):
@@ -386,9 +386,13 @@ else:
                             )
                             
                             if valgt_ny_dag != dag:
-                                st.session_state['manuelle_flytninger'][_aftale["id"]] = valgt_ny_dag
-                                gem_data_til_disken()
-                                kør_rullende_kalender_motor()
-                                st.rerun()
+    # 1. Opdater flytningen
+    st.session_state['manuelle_flytninger'][_aftale["id"]] = valgt_ny_dag
+    # 2. Gem til disk med det samme
+    gem_data_til_disken()
+    # 3. KØR MOTOREN IGEN - det er denne linje, der flytter kunden!
+    kør_rullende_kalender_motor()
+    # 4. Opdater siden
+    st.rerun()
                         else:
                             st.markdown(f"<p style='margin:0px; font-size:11px; color:darkblue; font-weight:bold;'>📅 {dag}</p>", unsafe_allow_html=True)
