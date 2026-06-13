@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import os
 
 st.set_page_config(page_title="Ruteplanlægger Pro", layout="wide")
+st.sidebar.image("logo.png", use_container_width=True)
 
 # CSS-optimering med flotte lodrette skillelinjer mellem ugedagene
 st.markdown("""
