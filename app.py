@@ -5,17 +5,15 @@ import os
 
 st.set_page_config(page_title="Ruteplanlægger Pro", layout="wide")
 
-# CSS til at fjerne unødig spildplads og gøre elementerne meget mere kompakte på mobilen
+# CSS-optimering specielt designet til at fixe iPad/mobil-klemte elementer
 st.markdown("""
     <style>
         .block-container { padding-top: 1rem !important; padding-bottom: 1rem !important; }
         [data-testid="stVerticalBlock"] > div { padding-bottom: 0px !important; margin-bottom: 0px !important; }
-        div.stButton > button {
-            padding: 2px 4px !important;
-            font-size: 12px !important;
-            min-height: 24px !important;
-            height: 24px !important;
-            margin: 0px !important;
+        /* Gør dropdown-menuerne indeni kundekortene små og kompakte */
+        div.stSelectbox div[data-testid="stSelectboxWithDynamicOptions"] {
+            transform: scale(0.9);
+            transform-origin: left center;
         }
         .stAlert { padding: 8px !important; margin-bottom: 8px !important; }
     </style>
@@ -23,7 +21,6 @@ st.markdown("""
 
 # Globale variabler
 ALLE_DAGE_GLOBAL = ["Mandag", "Tirsdag", "Onsdag", "Torsdag", "Fredag"]
-DAG_KORT = {"Mandag": "Ma", "Tirsdag": "Ti", "Onsdag": "On", "Torsdag": "To", "Fredag": "Fr"}
 
 BOPÆL_POSTNUMRE = {
     "Brian Felix Fabian": 4690, "Daniel Hemmingsen": 2730, "Carsten Bülow": 4000,
@@ -299,51 +296,61 @@ sorterede_uger = sorted(list({a["uge_id"] for a in st.session_state['aftaler']})
 visnings_uger = sorterede_uger[:16] if len(sorterede_uger) > 16 else sorterede_uger
 valgt_uge = st.sidebar.selectbox("Vælg uge:", options=visnings_uger if visnings_uger else ["Ingen uger"])
 
-# --- HOVEDSKÆRM ---
+# --- HOVEDSKÆRM (TVUNGET GITTER VISNING) ---
 st.title("🗺️ Ruteplanlægger Pro")
 
 if len(st.session_state['kunder']) == 0:
     st.warning("⚠️ Ingen data i skyen endnu. Admin skal uploade listen.")
 else:
     if er_læse_bruger:
-        st.info("ℹ️ Login: Læsetilgang (Casper Valdemar). Skift uge/konsulent i menuen til venstre.")
+        st.info("ℹ️ Overordnet leder (Casper Valdemar) — Kun kigge-adgang.")
     
     st.subheader(f"📅 {konsulent_navn} — {valgt_uge}")
     st.markdown("---")
 
     aktuelle_aftaler = [a for a in st.session_state['aftaler'] if int(a["konsulent_id"]) == int(valgt_konsulent_id) and a["uge_id"] == valgt_uge]
     
-    # Automatisk og mere flydende kolonne-gitter (Hjælper markant på både højkant og vandret mobil)
-    visnings_slots = st.columns(len(ALLE_DAGE_GLOBAL))
+    # Tvinger altid 5 kolonner ved siden af hinanden til det fulde kalender-gitter
+    visnings_slots = st.columns(5)
 
     for i, dag in enumerate(ALLE_DAGE_GLOBAL):
         with visnings_slots[i]:
             if dag not in valgte_dage:
-                st.markdown(f"**🛑 {dag[:2]}** (Lukket)")
+                st.markdown(f"### 🛑 {dag[:3]}.")
+                st.caption("Lukket")
             else:
                 dag_aftaler = sorted([a for a in aktuelle_aftaler if a["dag"] == dag], key=lambda x: str(x["postnr"]))
-                st.markdown(f"### **{dag[:3]}.** <span style='font-size:12px; color:gray;'>({len(dag_aftaler)}/8)</span>", unsafe_allow_html=True)
+                st.markdown(f"### **{dag[:3]}.** <span style='font-size:13px; color:gray;'>({len(dag_aftaler)}/8)</span>", unsafe_allow_html=True)
+                st.markdown("---")
                 
                 for _idx, _aftale in enumerate(dag_aftaler):
                     zone, farve = hent_zone_og_farve(_aftale["postnr"])
                     
-                    # Ultrakompakt kundeboks
+                    # Ultrakompakt og flot kundeboks uden knapper, der klemmer
                     with st.container(border=True):
-                        st.markdown(f"<p style='margin:0px; font-size:13px; font-weight:bold;'>{farve} {_aftale['kundenavn']}</p>", unsafe_allow_html=True)
-                        st.markdown(f"<p style='margin:0px; font-size:11px; color:gray;'>📍 {_aftale['postnr']} {_aftale['by']}</p>", unsafe_allow_html=True)
+                        st.markdown(f"<p style='margin:0px; font-size:13px; font-weight:bold; line-height:1.2;'>{farve} {_aftale['kundenavn']}</p>", unsafe_allow_html=True)
+                        st.markdown(f"<p style='margin:2px 0px 6px 0px; font-size:11px; color:gray;'>📍 {_aftale['postnr']} {_aftale['by']}</p>", unsafe_allow_html=True)
                         
-                        # Flotte, bittesmå inline-knapper direkte under teksten (ingen spildplads)
+                        # NY SMART DROP-DOWN FLYTNING FOR KONSULENTER
                         if not er_læse_bruger:
-                            knap_kolonner = st.columns(len(valgte_dage))
-                            for k_idx, m_dag in enumerate(valgte_dage):
-                                with knap_kolonner[k_idx]:
-                                    kort_navn = DAG_KORT.get(m_dag, m_dag[:2])
-                                    if m_dag == dag:
-                                        # Nuværende dag er deaktiveret og markeret pænt
-                                        st.button(kort_navn, key=f"b-{_aftale['id']}-{m_dag}-{_idx}", disabled=True, use_container_width=True)
-                                    else:
-                                        if st.button(kort_navn, key=f"b-{_aftale['id']}-{m_dag}-{_idx}", use_container_width=True):
-                                            st.session_state['manuelle_flytninger'][_aftale["id"]] = m_dag
-                                            gem_data_til_disken()
-                                            kør_rullende_kalender_motor()
-                                            st.rerun()
+                            # Find index for nuværende dag i listen af arbejdsdage
+                            try: nuværende_idx = valgte_dage.index(dag)
+                            except: nuværende_idx = 0
+                            
+                            valgt_ny_dag = st.selectbox(
+                                "Flyt til:",
+                                options=valgte_dage,
+                                index=nuværende_idx,
+                                key=f"select-{_aftale['id']}-{_idx}",
+                                label_visibility="collapsed"
+                            )
+                            
+                            # Hvis brugeren vælger en anden dag end den nuværende, flyttes aftalen med det samme!
+                            if valgt_ny_dag != dag:
+                                st.session_state['manuelle_flytninger'][_aftale["id"]] = valgt_ny_dag
+                                gem_data_til_disken()
+                                kør_rullende_kalender_motor()
+                                st.rerun()
+                        else:
+                            # For Casper Valdemar viser vi bare en lille låst tekst med ugedagen
+                            st.markdown(f"<p style='margin:0px; font-size:11px; color:darkblue; font-weight:bold;'>📅 {dag}</p>", unsafe_allow_html=True)
