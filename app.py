@@ -3,13 +3,9 @@ import pandas as pd
 from datetime import datetime, timedelta
 import os
 
-st.set_page_config(page_title="Ruteplanlægger Pro", layout="wide")
+st.set_page_config(page_title="Convenience Ruteplanlægger", layout="wide",page_icon="logo.png" )
 st.sidebar.image("logo.png", use_container_width=True)
-st.set_page_config(
-    page_title="Ruteplanlægger Pro", 
-    layout="wide",
-    page_icon="logo.png"  # Udskift 'logo.png' med navnet på din fil
-)
+
 
 # CSS-optimering med flotte lodrette skillelinjer mellem ugedagene
 st.markdown("""
