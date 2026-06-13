@@ -3,8 +3,12 @@ import pandas as pd
 from datetime import datetime, timedelta
 import os
 
-st.set_page_config(page_title="Ruteplanlægger Pro", layout="wide")
-
+st.set_page_config(
+    page_title="Convenience Ruteplanlægger Pro", 
+    layout="wide",
+    page_icon="logo.png"
+st.sidebar.image("logo.png", use_container_width=True)
+    
 # CSS-optimering med flotte lodrette skillelinjer mellem ugedagene
 st.markdown("""
     <style>
@@ -190,7 +194,7 @@ def kør_rullende_kalender_motor():
 
 # --- LOGIN SKÆRM ---
 if not st.session_state['logget_ind']:
-    st.title("🔐 Ruteplanlægger Pro - Login")
+    st.title("🔐 Conveience Ruteplanlægger  - Login")
     with st.form("login_form"):
         u_input = st.text_input("Brugernavn (Fornavn eller fulde navn)")
         p_input = st.text_input("Adgangskode", type="password")
@@ -288,7 +292,7 @@ sorterede_uger = sorted(list({a["uge_id"] for a in st.session_state['aftaler']})
 visnings_uger = sorterede_uger[:16] if len(sorterede_uger) > 16 else sorterede_uger
 valgt_uge = st.sidebar.selectbox("Vælg uge:", options=visnings_uger if visnings_uger else ["Ingen uger"])
 
-st.title("🗺️ Ruteplanlægger Pro")
+st.title("🗺️ Convenience Ruteplanlægger @ Royal Unibrew")
 
 if len(st.session_state['kunder']) == 0:
     st.warning("⚠️ Ingen data i skyen endnu. Admin skal uploade listen.")
