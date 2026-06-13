@@ -340,28 +340,23 @@ else:
                 st.markdown(f"### **{dag[:3]}.** <span style='font-size:13px; color:gray;'>({len(dag_aftaler)}/8)</span>", unsafe_allow_html=True)
                 st.markdown("---")
                 
-                for _idx, _aftale in enumerate(dag_aftaler):
+               for _idx, _aftale in enumerate(dag_aftaler):
                     zone, farve = hent_zone_og_farve(_aftale["postnr"])
                     
-                    # Flot, strømlinet og ren kundeboks
                     with st.container(border=True):
                         st.markdown(f"<p style='margin:0px; font-size:13px; font-weight:bold; line-height:1.2;'>{farve} {_aftale['kundenavn']}</p>", unsafe_allow_html=True)
                         st.markdown(f"<p style='margin:2px 0px 6px 0px; font-size:11px; color:gray;'>📍 {_aftale['postnr']} {_aftale['by']}</p>", unsafe_allow_html=True)
                         
-                        # Dropdown menu til lynhurtig flytning af rute
                         if not er_læse_bruger:
                             try: nuværende_idx = valgte_dage.index(dag)
                             except: nuværende_idx = 0
                             
                             valgt_ny_dag = st.selectbox(
-                                "Flyt til:",
-                                options=valgte_dage,
-                                index=nuværende_idx,
-                                key=f"select-{_aftale['id']}-{_idx}",
-                                label_visibility="collapsed"
+                                "Flyt til:", options=valgte_dage, index=nuværende_idx,
+                                key=f"select-{_aftale['id']}-{_idx}", label_visibility="collapsed"
                             )
                             
-                        if valgt_ny_dag != dag:
+                            if valgt_ny_dag != dag:
                                 st.session_state['manuelle_flytninger'][_aftale["id"]] = valgt_ny_dag
                                 gem_data_til_disken()
                                 kør_rullende_kalender_motor()
