@@ -6,7 +6,7 @@ import os
 st.set_page_config(
     page_title="Convenience Ruteplanlægger Pro", 
     layout="wide",
-    page_icon="logo.png"
+    page_icon="logo.png")
 st.sidebar.image("logo.png", use_container_width=True)
     
 # CSS-optimering med flotte lodrette skillelinjer mellem ugedagene
