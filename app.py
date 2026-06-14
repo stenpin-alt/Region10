@@ -258,10 +258,19 @@ if st.session_state['bruger_rolle'] == "admin":
                 for idx, række in df_indlæst.iterrows():
                     v_navn = række[col_navn]; v_by = række[col_by]; v_pnr = række[col_postnr]; v_kons = str(række[col_konsulent]).strip()
                     if pd.isna(v_navn) or pd.isna(v_by) or pd.isna(v_pnr) or v_kons not in kons_navn_til_id: continue
-                    freq = 0.25
+                    
+                    # --- INDSAT SKUDSIKKER FREKVENS-INDLÆSNING HER ---
+                    freq = 0.25  # Standard, hvis alt fejler
                     if col_frek and not pd.isna(række[col_frek]):
-                        try: freq = float(str(række[col_frek]).replace(',', '.'))
-                        except: freq = 0.25
+                        rå_værdi = str(række[col_frek]).strip().replace(',', '.')
+                        try:
+                            freq = float(rå_værdi)
+                        except ValueError:
+                            # Ekstra sikkerhed hvis cellen driller pga. tekst-formatering
+                            if "1" in rå_værdi: freq = 1.0
+                            elif "0.5" in rå_værdi or "0,5" in str(række[col_frek]): freq = 0.5
+                            else: freq = 0.25
+                            
                     st.session_state['kunder'].append({"id": idx + 1000, "navn": str(v_navn).strip(), "by": str(v_by).strip(), "postnr": v_pnr, "frekvens": freq, "konsulent_id": kons_navn_til_id[v_kons]})
                 gem_data_til_disken()
                 kør_rullende_kalender_motor()
