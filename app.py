@@ -9,7 +9,7 @@ st.set_page_config(
     page_icon="logo.png"
 )
 
-# RETTET: use_container_width=True er udskiftet med width="stretch" for at fjerne advarsler
+# Rettet til den nye 2026-standard
 st.sidebar.image("logo.png", width="stretch")
     
 # CSS-optimering med flotte lodrette skillelinjer mellem ugedagene
@@ -130,7 +130,7 @@ def hent_zone_og_farve(pnr):
     elif 8000 <= pnr_int <= 8999: return "Østjylland", "🔴"
     return "Nordjylland", "⚫"
 
-# --- CACHET RUTEMOTOR (FORHINDRER LOOP OG HÆNG) ---
+# --- CACHET RUTEMOTOR ---
 @st.cache_data
 def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, valgt_loft):
     idag = datetime.now()
@@ -171,7 +171,7 @@ def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, v
             
             kunder_i_uge = faste_kunder + skæve_kunder
 
-            # 1. Manuelle flytninger overskriver alt
+            # 1. Manuelle flytninger
             for kunde in kunder_i_uge[:]:
                 unik_nøgle = f"{kunde['id']}-{uge_id}"
                 if unik_nøgle in manuelle_flytninger:
@@ -254,7 +254,6 @@ if st.session_state['bruger_rolle'] == "admin":
             if col_navn and col_by and col_postnr:
                 unikke_kons_navne = sorted(df_indlæst[col_konsulent].dropna().unique())
                 
-                # Slet cachen helt inden indlæsning
                 st.cache_data.clear()
                 
                 st.session_state['konsulenter'] = {i+1: {"navn": str(n).strip()} for i, n in enumerate(unikke_kons_navne)}
@@ -310,7 +309,14 @@ if st.session_state['bruger_rolle'] == "admin" or st.session_state['bruger_rolle
     if st.session_state['bruger_rolle'] == "chef": er_læse_bruger = True
     if st.session_state['konsulenter']:
         konsulent_keys = list(st.session_state['konsulenter'].keys())
-        valgt_konsulent_id = st.sidebar.selectbox("Vis rute for:", options=konsulent_keys, format_func=lambda x: st.session_state['konsulenter'][x]["navn"])
+        
+        # RETTET: Tilføjet en fast, statisk key så Streamlit ikke mister fokus på dit valg ved genindlæsninger
+        valgt_konsulent_id = st.sidebar.selectbox(
+            "Vis rute for:", 
+            options=konsulent_keys, 
+            format_func=lambda x: st.session_state['konsulenter'][x]["navn"],
+            key="valgt_konsulent_dropdown"
+        )
         konsulent_navn = st.session_state['konsulenter'][valgt_konsulent_id]["navn"]
     else: valgt_konsulent_id = 1; konsulent_navn = "Ingen data"
 else:
