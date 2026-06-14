@@ -137,7 +137,7 @@ def hent_zone_og_farve(pnr):
     elif 8000 <= pnr_int <= 8999: return "Østjylland", "🔴"
     return "Nordjylland", "⚫"
 
-# --- RUTE MOTOR ---
+# --- FORBEDRET RUTEMOTOR MED PRIORITERING ---
 def kør_rullende_kalender_motor():
     idag = datetime.now()
     start_mandag = idag - timedelta(days=idag.weekday())
@@ -145,7 +145,7 @@ def kør_rullende_kalender_motor():
     
     valgt_loft = st.session_state.get('maks_kunder_pr_dag', 8)
     AUTOMATISK_LOFT = valgt_loft
-    ABSOLUT_MAKS = valgt_loft + 2
+    ABSOLUT_MAKS = valgt_loft + 4  # Giver elastik til uger med tætpakkede faste besøg
     
     global_tæller = {}
 
@@ -159,20 +159,26 @@ def kør_rullende_kalender_motor():
         for k_id, k_info in st.session_state['konsulenter'].items():
             if k_id not in global_tæller[uge_id]: global_tæller[uge_id][k_id] = {d: 0 for d in ALLE_DAGE_GLOBAL}
             
-            kunder_i_uge = []
+            faste_kunder = []
+            skæve_kunder = []
+            
+            # Opdel kunder efter frekvens så ugentlige (1.0) behandles først
             for kunde in st.session_state['kunder']:
                 if int(kunde["konsulent_id"]) == int(k_id):
                     frekvens = float(kunde["frekvens"])
                     k_id_int = int(kunde["id"])
                     
                     if frekvens >= 1.0:
-                        kunder_i_uge.append(kunde.copy())
+                        faste_kunder.append(kunde.copy())
                     elif frekvens == 0.5:
                         if uge_nummer % 2 == (k_id_int % 2):
-                            kunder_i_uge.append(kunde.copy())
+                            skæve_kunder.append(kunde.copy())
                     elif frekvens == 0.25:
                         if uge_nummer % 4 == (k_id_int % 4):
-                            kunder_i_uge.append(kunde.copy())
+                            skæve_kunder.append(kunde.copy())
+            
+            # Saml listen, så de faste ugentlige altid ligger FORREST i køen
+            kunder_i_uge = faste_kunder + skæve_kunder
 
             # 1. Manuelle flytninger
             for kunde in kunder_i_uge[:]:
@@ -194,6 +200,7 @@ def kør_rullende_kalender_motor():
                 if not konsulent_arbejdsdage: 
                     konsulent_arbejdsdage = ALLE_DAGE_GLOBAL
                     
+                # Første forsøg: Forsøg at overholde den valgte dags-grænse
                 for dag in konsulent_arbejdsdage:
                     if global_tæller[uge_id][k_id][dag] < AUTOMATISK_LOFT:
                         global_tæller[uge_id][k_id][dag] += 1
@@ -205,6 +212,7 @@ def kør_rullende_kalender_motor():
                         placeret = True
                         break
                 
+                # Andet forsøg: Hvis alt er fyldt op, tvinges kunden ind ved hjælp af ABSOLUT_MAKS-elastikken
                 if not placeret:
                     for dag in konsulent_arbejdsdage:
                         if global_tæller[uge_id][k_id][dag] < ABSOLUT_MAKS:
@@ -259,14 +267,12 @@ if st.session_state['bruger_rolle'] == "admin":
                     v_navn = række[col_navn]; v_by = række[col_by]; v_pnr = række[col_postnr]; v_kons = str(række[col_konsulent]).strip()
                     if pd.isna(v_navn) or pd.isna(v_by) or pd.isna(v_pnr) or v_kons not in kons_navn_til_id: continue
                     
-                    # --- INDSAT SKUDSIKKER FREKVENS-INDLÆSNING HER ---
                     freq = 0.25  # Standard, hvis alt fejler
                     if col_frek and not pd.isna(række[col_frek]):
                         rå_værdi = str(række[col_frek]).strip().replace(',', '.')
                         try:
                             freq = float(rå_værdi)
                         except ValueError:
-                            # Ekstra sikkerhed hvis cellen driller pga. tekst-formatering
                             if "1" in rå_værdi: freq = 1.0
                             elif "0.5" in rå_værdi or "0,5" in str(række[col_frek]): freq = 0.5
                             else: freq = 0.25
@@ -321,7 +327,7 @@ if not er_læse_bruger:
         max_value=15, 
         value=st.session_state['maks_kunder_pr_dag'],
         step=1,
-        help="Bestemmer hvor mange kunder motoren forsøger at lægge på en dag."
+        help="Bestemmer hvor mange kunder motoren forsøer at lægge på en dag."
     )
     
     loft_ændret = (nyt_loft != st.session_state['maks_kunder_pr_dag'])
@@ -344,7 +350,7 @@ else:
     if 'maks_kunder_pr_dag' not in st.session_state:
         st.session_state['maks_kunder_pr_dag'] = 8
 
-# --- FIX: GENERERER KORREKT SAMTLIGE 24 UGER I RÆKKEFØLGE UDEN SPRING ---
+# --- GENERERING AF SAMTLIGE 24 UGER ---
 idag_dato = datetime.now()
 start_mandag_dato = idag_dato - timedelta(days=idag_dato.weekday())
 alle_24_uger = []
