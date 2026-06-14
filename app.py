@@ -137,16 +137,15 @@ def hent_zone_og_farve(pnr):
     elif 8000 <= pnr_int <= 8999: return "Østjylland", "🔴"
     return "Nordjylland", "⚫"
 
-# --- RUTE MOTOR (OPDATERET MED DYNAMISK KUNDELØFT OG 2-CIFRET UGE) ---
+# --- RUTE MOTOR (MED DYNAMISK KUNDELØFT, 2-CIFRET UGE OG INTELLIGENT FREKVENS-SPREDNING) ---
 def kør_rullende_kalender_motor():
     idag = datetime.now()
     start_mandag = idag - timedelta(days=idag.weekday())
     st.session_state['aftaler'] = []
     
-    # Henter det valgte max antal kunder fra session_state (standard er 8 hvis intet er valgt)
     valgt_loft = st.session_state.get('maks_kunder_pr_dag', 8)
     AUTOMATISK_LOFT = valgt_loft
-    ABSOLUT_MAKS = valgt_loft + 2  # Giver 2 ekstra pladser som buffer hvis ruten flyder over
+    ABSOLUT_MAKS = valgt_loft + 2
     
     global_tæller = {}
 
@@ -154,7 +153,6 @@ def kør_rullende_kalender_motor():
         mål_mandag = start_mandag + timedelta(weeks=uge_frem)
         uge_nummer = mål_mandag.isocalendar()[1]
         
-        # Tvinger ugenummeret til altid at have 2 cifre (f.eks. Uge05) for perfekt sortering
         uge_id = f"{mål_mandag.year}-Uge{uge_nummer:02d}"
         if uge_id not in global_tæller: global_tæller[uge_id] = {}
         
@@ -165,8 +163,19 @@ def kør_rullende_kalender_motor():
             for kunde in st.session_state['kunder']:
                 if int(kunde["konsulent_id"]) == int(k_id):
                     frekvens = float(kunde["frekvens"])
-                    if (frekvens >= 1.0) or (frekvens == 0.5 and uge_nummer % 2 == 0) or (frekvens == 0.25 and uge_nummer % 4 == 1):
+                    k_id_int = int(kunde["id"])
+                    
+                    # Spreder besøg ud baseret på kundens ID for at undgå tomme uger
+                    if frekvens >= 1.0:
                         kunder_i_uge.append(kunde.copy())
+                    elif frekvens == 0.5:
+                        # Deler kunderne op i 2 hold (uge_nummer % 2 matcher enten 0 eller 1)
+                        if uge_nummer % 2 == (k_id_int % 2):
+                            kunder_i_uge.append(kunde.copy())
+                    elif frekvens == 0.25:
+                        # Deler kunderne op i 4 hold (uge_nummer % 4 matcher 0, 1, 2 eller 3)
+                        if uge_nummer % 4 == (k_id_int % 4):
+                            kunder_i_uge.append(kunde.copy())
 
             # 1. Manuelle flytninger låses fast
             for kunde in kunder_i_uge[:]:
@@ -251,7 +260,7 @@ if st.session_state['bruger_rolle'] == "admin":
                 st.session_state['kunder'] = []
                 for idx, række in df_indlæst.iterrows():
                     v_navn = række[col_navn]; v_by = række[col_by]; v_pnr = række[col_postnr]; v_kons = str(række[col_konsulent]).strip()
-                    if pd.isna(v_navn) or pd.isna(v_by) or pd.isna(v_pnr) or v_kons not in kons_navn_til_id: continue
+                    if pd.isna(v_navn) or pd.isna(v_by) or pd.isna(v_pnr) or v_kons not in rooms_to_id: continue
                     freq = 0.25
                     if col_frek and not pd.isna(række[col_frek]):
                         try: freq = float(str(række[col_frek]).replace(',', '.'))
@@ -297,7 +306,6 @@ if not er_læse_bruger:
     st.sidebar.markdown("---")
     st.sidebar.header("⚙️ Indstillinger")
     
-    # Slider: Bestem antal kunder pr. dag dynamisk
     if 'maks_kunder_pr_dag' not in st.session_state:
         st.session_state['maks_kunder_pr_dag'] = 8
         
@@ -310,19 +318,16 @@ if not er_læse_bruger:
         help="Bestemmer hvor mange kunder motoren forsøger at lægge på en dag."
     )
     
-    # Tjek om loftet er ændret på skærmen
     loft_ændret = (nyt_loft != st.session_state['maks_kunder_pr_dag'])
     if loft_ændret:
         st.session_state['maks_kunder_pr_dag'] = nyt_loft
 
-    # Vælg arbejdsdage
     gemte_dage = st.session_state['arbejdsdage'].get(valgt_konsulent_id, ALLE_DAGE_GLOBAL)
     valgte_dage = []
     for d in ALLE_DAGE_GLOBAL:
         if st.sidebar.checkbox(d, value=(d in gemte_dage), key=f"d-check-{valgt_konsulent_id}-{d}"): 
             valgte_dage.append(d)
             
-    # Hvis enten dage eller max antal kunder ændres, genberegner vi ruten med det samme!
     if valgte_dage != gemte_dage or loft_ændret:
         st.session_state['arbejdsdage'][valgt_konsulent_id] = valgte_dage
         gem_data_til_disken()
