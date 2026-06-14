@@ -9,7 +9,7 @@ st.set_page_config(
     page_icon="logo.png"
 )
 
-# 2026-standard for billedbredde
+# 100% sikker 2026-standard uden brug af 'use_container_width' nogen steder
 st.sidebar.image("logo.png", width="stretch")
     
 # CSS-optimering med lodrette skillelinjer mellem ugedagene
@@ -274,7 +274,6 @@ if st.session_state['bruger_rolle'] == "admin":
                             
                     st.session_state['kunder'].append({"id": idx + 1000, "navn": str(v_navn).strip(), "by": str(v_by).strip(), "postnr": v_pnr, "frekvens": freq, "konsulent_id": kons_navn_til_id[v_kons]})
                 
-                # Standardindstil til første konsulent på listen efter nyt upload
                 if st.session_state['konsulenter']:
                     st.session_state['aktivt_konsulent_id'] = list(st.session_state['konsulenter'].keys())[0]
 
@@ -306,7 +305,7 @@ aftaler_liste = beregn_ruter_cached(
     st.session_state['maks_kunder_pr_dag']
 )
 
-# --- SKIFT-KONSULENT CALLBACK SYNKRONISERING ---
+# --- SKIFT-KONSULENT CALLBACK ---
 def opdater_valgt_konsulent():
     st.session_state['aktivt_konsulent_id'] = st.session_state['sb_konsulent_valg']
 
@@ -317,11 +316,9 @@ if st.session_state['bruger_rolle'] == "admin" or st.session_state['bruger_rolle
     if st.session_state['konsulenter']:
         konsulent_keys = list(st.session_state['konsulenter'].keys())
         
-        # Sikrer, at session state altid har et gyldigt ID tilgængeligt
         if st.session_state['aktivt_konsulent_id'] not in konsulent_keys:
             st.session_state['aktivt_konsulent_id'] = konsulent_keys[0]
             
-        # Tvinger dropdown-menuen til at læse og skrive synkront til session_state vha. on_change callback
         valgt_konsulent_id = st.sidebar.selectbox(
             "Vis rute for:", 
             options=konsulent_keys, 
