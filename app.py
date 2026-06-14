@@ -9,8 +9,8 @@ st.set_page_config(
     page_icon="logo.png"
 )
 
-# Rettet til det helt korrekte format i nyere Streamlit versioner
-st.sidebar.image("logo.png", use_container_width=True)
+# RETTET: use_container_width=True er udskiftet med width="stretch" for at fjerne advarsler
+st.sidebar.image("logo.png", width="stretch")
     
 # CSS-optimering med flotte lodrette skillelinjer mellem ugedagene
 st.markdown("""
@@ -70,7 +70,7 @@ def hent_data_fra_disken():
         df_kund = pd.read_csv(FIL_KUNDER)
         st.session_state['kunder'] = df_kund.to_dict(orient="records")
     if os.path.exists(FIL_FLYTNINGER) and not st.session_state['manuelle_flytninger']:
-        df_flyt = pd.read_csv(FIL_FLYTFUL_PATH if 'FIL_FLYTFUL_PATH' in locals() else FIL_FLYTNINGER)
+        df_flyt = pd.read_csv(FIL_FLYTNINGER)
         st.session_state['manuelle_flytninger'] = {str(r["id"]): str(r["dag"]) for _, r in df_flyt.iterrows()}
     if os.path.exists(FIL_KODER) and not st.session_state['bruger_koder']:
         df_koder = pd.read_csv(FIL_KODER)
@@ -129,7 +129,6 @@ def hent_zone_og_farve(pnr):
     elif 7000 <= pnr_int <= 7999: return "Midt-/Vestjylland", "🟣"
     elif 8000 <= pnr_int <= 8999: return "Østjylland", "🔴"
     return "Nordjylland", "⚫"
-
 
 # --- CACHET RUTEMOTOR (FORHINDRER LOOP OG HÆNG) ---
 @st.cache_data
@@ -215,7 +214,6 @@ def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, v
                             break
     return beregnede_aftaler
 
-
 # --- LOGIN SKÆRM ---
 if not st.session_state['logget_ind']:
     st.title("🔐 Convenience Ruteplanlægger - Login")
@@ -256,7 +254,7 @@ if st.session_state['bruger_rolle'] == "admin":
             if col_navn and col_by and col_postnr:
                 unikke_kons_navne = sorted(df_indlæst[col_konsulent].dropna().unique())
                 
-                # Slet cachen så den tvinges til at genberegne den nye fil med det samme
+                # Slet cachen helt inden indlæsning
                 st.cache_data.clear()
                 
                 st.session_state['konsulenter'] = {i+1: {"navn": str(n).strip()} for i, n in enumerate(unikke_kons_navne)}
@@ -298,7 +296,6 @@ if st.session_state['bruger_rolle'] == "admin":
             st.sidebar.success(f"Kode ændret permanent!")
 
 # --- HENT DATA FRA CACHE ---
-# Vi passer kun de rå værdier ind, så Streamlit ved nøjagtigt hvornår den skal genberegne
 aftaler_liste = beregn_ruter_cached(
     st.session_state['kunder'], 
     st.session_state['konsulenter'], 
@@ -330,7 +327,6 @@ if not er_læse_bruger:
         st.cache_data.clear()
         st.rerun()
 
-    # Konverter til strenge til cachen for at undgå dictionary-mutationsfejl
     str_k_id = str(valgt_konsulent_id)
     gemte_dage = st.session_state['arbejdsdage'].get(str_k_id, ALLE_DAGE_GLOBAL)
     valgte_dage = []
@@ -346,7 +342,7 @@ if not er_læse_bruger:
 else:
     valgte_dage = st.session_state['arbejdsdage'].get(str(valgt_konsulent_id), ALLE_DAGE_GLOBAL)
 
-# Generer de 24 uger til dropdown-menuen
+# Generer uger til menuen
 idag_dato = datetime.now()
 start_mandag_dato = idag_dato - timedelta(days=idag_dato.weekday())
 alle_24_uger = []
@@ -391,14 +387,13 @@ else:
                                 try: nuværende_idx = valgte_dage.index(dag)
                                 except ValueError: nuværende_idx = 0
                                 
-                                # Præcis og stabil unik key-generering for at stoppe unødvendige genindlæsninger
                                 s_key = f"sel-{_aftale['id']}-{_idx}"
                                 valgt_ny_dag = st.selectbox("Flyt:", options=valgte_dage, index=nuværende_idx, key=s_key, label_visibility="collapsed")
                                 
                                 if valgt_ny_dag != dag:
                                     st.session_state['manuelle_flytninger'][_aftale["id"]] = valgt_ny_dag
                                     gem_data_til_disken()
-                                    st.cache_data.clear() # Tøm cache så flytningen registreres med det samme
+                                    st.cache_data.clear()
                                     st.rerun()
                             else:
                                 st.markdown(f"<p style='margin:0px; font-size:11px; color:darkblue; font-weight:bold;'>📅 {dag}</p>", unsafe_allow_html=True)
