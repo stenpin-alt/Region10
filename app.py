@@ -8,7 +8,8 @@ st.set_page_config(
     layout="wide",
     page_icon="logo.png"
 )
-st.sidebar.image("logo.png", use_container_width=True)
+# Opdateret til det nye format for at fjerne log-advarsler
+st.sidebar.image("logo.png", width="stretch")
     
 # CSS-optimering med flotte lodrette skillelinjer mellem ugedagene
 st.markdown("""
@@ -50,11 +51,11 @@ BOPÆL_POSTNUMRE = {
     "Daniel Murad": 8000, "Thomas Jakobsen": 2640, "Mai Utzon": 4140,
 }
 
-# --- PERMANENT DATALAGRING ---
-FIL_KUNDER = "gemt_kunder.csv"
-FIL_KONSULENTER = "gemt_konsulenter.csv"
-FIL_FLYTNINGER = "gemt_flytninger.csv"
-FIL_KODER = "gemt_koder.csv"
+# --- PERMANENT DATALAGRING (Flyttet til /tmp/ for at stoppe genstarts-løkken) ---
+FIL_KUNDER = "/tmp/gemt_kunder.csv"
+FIL_KONSULENTER = "/tmp/gemt_konsulenter.csv"
+FIL_FLYTNINGER = "/tmp/gemt_flytninger.csv"
+FIL_KODER = "/tmp/gemt_koder.csv"
 
 def gem_data_til_disken():
     if st.session_state['kunder']:
@@ -327,7 +328,7 @@ if not er_læse_bruger:
         max_value=15, 
         value=st.session_state['maks_kunder_pr_dag'],
         step=1,
-        help="Bestemmer hvor mange kunder motoren forsøer at lægge på en dag."
+        help="Bestemmer hvor mange kunder motoren forsøger at lægge på en dag."
     )
     
     loft_ændret = (nyt_loft != st.session_state['maks_kunder_pr_dag'])
