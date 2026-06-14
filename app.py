@@ -182,12 +182,12 @@ def kør_rullende_kalender_motor():
                     kunder_i_uge.remove(kunde)
 
             # 2. Automatisk placering
-            konsulent_arbejdsdage = st.session_state['arbejdsdage'].get(k_id, ALLE_DAGE_GLOBAL)
-            if not konsulent_arbejdsdage: 
-                konsulent_arbejdsdage = ALLE_DAGE_GLOBAL
-                
             for kunde in kunder_i_uge:
                 placeret = False
+                konsulent_arbejdsdage = st.session_state['arbejdsdage'].get(k_id, ALLE_DAGE_GLOBAL)
+                if not konsulent_arbejdsdage: 
+                    konsulent_arbejdsdage = ALLE_DAGE_GLOBAL
+                    
                 for dag in konsulent_arbejdsdage:
                     if global_tæller[uge_id][k_id][dag] < AUTOMATISK_LOFT:
                         global_tæller[uge_id][k_id][dag] += 1
@@ -333,18 +333,19 @@ else:
     if 'maks_kunder_pr_dag' not in st.session_state:
         st.session_state['maks_kunder_pr_dag'] = 8
 
-# --- FREMTIDSSIKRET DROPDOWN (UDEN 16-UGERS BEGRÆNSNING) ---
-sorterede_uger = list({a["uge_id"] for a in st.session_state['aftaler']})
+# --- GENERERING AF ALLE DE NÆSTE 24 UGER SÅ INGEN SPRINGS OVER ---
+idag_dato = datetime.now()
+start_mandag_dato = idag_dato - timedelta(days=idag_dato.weekday())
+alle_24_uger = []
 
-def uge_sorterings_nøgle(uge_streng):
-    try:
-        år, uge_del = uge_streng.split("-Uge")
-        return (int(år), int(uge_del))
-    except:
-        return (0, 0)
+for uge_frem in range(0, 24):
+    mål_mandag_dato = start_mandag_dato + timedelta(weeks=uge_frem)
+    uge_nummer_gen = mål_mandag_dato.isocalendar()[1]
+    uge_id_gen = f"{mål_mandag_dato.year}-Uge{uge_nummer_gen:02d}"
+    if uge_id_gen not in alle_24_uger:
+        alle_24_uger.append(uge_id_gen)
 
-sorterede_uger.sort(key=uge_sorterings_nøgle)
-valgt_uge = st.sidebar.selectbox("Vælg uge:", options=sorterede_uger if sorterede_uger else ["Ingen uger"])
+valgt_uge = st.sidebar.selectbox("Vælg uge:", options=alle_24_uger)
 
 st.title("🗺️ Convenience Ruteplanlægger @ Royal Unibrew")
 
@@ -365,23 +366,25 @@ else:
                 st.caption("Lukket")
             else:
                 dag_aftaler = sorted([a for a in aktuelle_aftaler if a["dag"] == dag], key=lambda x: str(x["postnr"]))
-                # Dynamisk loft vises nu i overskriften i stedet for det hårde tal 10!
                 st.markdown(f"### **{dag[:3]}.** <span style='font-size:13px; color:gray;'>({len(dag_aftaler)}/{st.session_state['maks_kunder_pr_dag']})</span>", unsafe_allow_html=True)
                 st.markdown("---")
                 
-                for _idx, _aftale in enumerate(dag_aftaler):
-                    zone, farve = hent_zone_og_farve(_aftale["postnr"])
-                    with st.container(border=True):
-                        st.markdown(f"<p style='margin:0px; font-size:13px; font-weight:bold; line-height:1.2;'>{farve} {_aftale['kundenavn']}</p>", unsafe_allow_html=True)
-                        st.markdown(f"<p style='margin:2px 0px 6px 0px; font-size:11px; color:gray;'>📍 {_aftale['postnr']} {_aftale['by']}</p>", unsafe_allow_html=True)
-                        if not er_læse_bruger:
-                            try: nuværende_idx = valgte_dage.index(dag)
-                            except: nuværende_idx = 0
-                            valgt_ny_dag = st.selectbox("Flyt til:", options=valgte_dage, index=nuværende_idx, key=f"select-{_aftale['id']}-{_idx}", label_visibility="collapsed")
-                            if valgt_ny_dag != dag:
-                                st.session_state['manuelle_flytninger'][_aftale["id"]] = valgt_ny_dag
-                                gem_data_til_disken()
-                                kør_rullende_kalender_motor()
-                                st.rerun()
-                        else:
-                            st.markdown(f"<p style='margin:0px; font-size:11px; color:darkblue; font-weight:bold;'>📅 {dag}</p>", unsafe_allow_html=True)
+                if len(dag_aftaler) == 0:
+                    st.markdown("<p style='margin:0px; font-size:11px; color:darkblue; font-style:italic;'>📅 Ingen planlagte besøg</p>", unsafe_allow_html=True)
+                else:
+                    for _idx, _aftale in enumerate(dag_aftaler):
+                        zone, farve = hent_zone_og_farve(_aftale["postnr"])
+                        with st.container(border=True):
+                            st.markdown(f"<p style='margin:0px; font-size:13px; font-weight:bold; line-height:1.2;'>{farve} {_aftale['kundenavn']}</p>", unsafe_allow_html=True)
+                            st.markdown(f"<p style='margin:2px 0px 6px 0px; font-size:11px; color:gray;'>📍 {_aftale['postnr']} {_aftale['by']}</p>", unsafe_allow_html=True)
+                            if not er_læse_bruger:
+                                try: nuværende_idx = valgte_dage.index(dag)
+                                except: nuværende_idx = 0
+                                valgt_ny_dag = st.selectbox("Flyt til:", options=valgte_dage, index=nuværende_idx, key=f"select-{_aftale['id']}-{_idx}", label_visibility="collapsed")
+                                if valgt_ny_dag != dag:
+                                    st.session_state['manuelle_flytninger'][_aftale["id"]] = valgt_ny_dag
+                                    gem_data_til_disken()
+                                    kør_rullende_kalender_motor()
+                                    st.rerun()
+                            else:
+                                st.markdown(f"<p style='margin:0px; font-size:11px; color:darkblue; font-weight:bold;'>📅 {dag}</p>", unsafe_allow_html=True)
