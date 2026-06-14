@@ -128,7 +128,7 @@ def hent_zone_og_farve(pnr):
     elif 8000 <= pnr_int <= 8999: return "Østjylland", "🔴"
     return "Nordjylland", "⚫"
 
-# --- CACHET RUTEMOTOR ---
+# --- CACHET RUTEMOTOR (RETTET STRØMLINET UGEID) ---
 @st.cache_data
 def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, valgt_loft):
     idag = datetime.now()
@@ -143,6 +143,8 @@ def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, v
     for uge_frem in range(0, 24):
         mål_mandag = start_mandag + timedelta(weeks=uge_frem)
         uge_nummer = mål_mandag.isocalendar()[1]
+        
+        # 100% ensartet og sikker strengformatering
         uge_id = f"{mål_mandag.year}-Uge{uge_nummer:02d}"
         
         if uge_id not in global_tæller: global_tæller[uge_id] = {}
@@ -235,7 +237,7 @@ if st.sidebar.button("Log ud 🔓"):
     st.session_state['aktivt_konsulent_id'] = None
     st.rerun()
 
-# --- EXCEL UPLOAD (MED INTELLIGENT FREKVENS-TJEK) ---
+# --- EXCEL UPLOAD ---
 if st.session_state['bruger_rolle'] == "admin":
     st.sidebar.header("📂 Admin: Excel Upload")
     uploaded_file = st.sidebar.file_uploader("Upload kundeliste", type=["xlsx", "xls"])
@@ -266,11 +268,9 @@ if st.session_state['bruger_rolle'] == "admin":
                     v_navn = række[col_navn]; v_by = række[col_by]; v_pnr = række[col_postnr]; v_kons = str(række[col_konsulent]).strip()
                     if pd.isna(v_navn) or pd.isna(v_by) or pd.isna(v_pnr) or v_kons not in kons_navn_til_id: continue
                     
-                    # FORBEDRET INTELLIGENT FREKVENS-TJEK FOR FASTE KUNDER
-                    freq = 1.0  # Standardindstilling er nu FAST ugentlig, hvis feltet mangler data
+                    freq = 1.0  
                     if col_frek and not pd.isna(række[col_frek]):
                         rå_værdi = str(række[col_frek]).strip().lower().replace(',', '.')
-                        
                         if "1/1" in rå_værdi or "ugentlig" in rå_værdi or "fast" in rå_værdi:
                             freq = 1.0
                         else:
@@ -278,7 +278,7 @@ if st.session_state['bruger_rolle'] == "admin":
                             except ValueError:
                                 if "0.5" in rå_værdi or "1/2" in rå_værdi: freq = 0.5
                                 elif "0.25" in rå_værdi or "1/4" in rå_værdi: freq = 0.25
-                                else: freq = 1.0 # Sikkerhedsmargin
+                                else: freq = 1.0
                             
                     st.session_state['kunder'].append({"id": idx + 1000, "navn": str(v_navn).strip(), "by": str(v_by).strip(), "postnr": v_pnr, "frekvens": freq, "konsulent_id": kons_navn_til_id[v_kons]})
                 
@@ -369,13 +369,15 @@ if not er_læse_bruger and st.session_state['konsulenter']:
 else:
     valgte_dage = st.session_state['arbejdsdage'].get(str(valgt_konsulent_id), ALLE_DAGE_GLOBAL)
 
-# Generer uger til menuen
+# REEL OG SIKKER FORMERING AF DE 24 UGER TIL VISNING
 idag_dato = datetime.now()
 start_mandag_dato = idag_dato - timedelta(days=idag_dato.weekday())
 alle_24_uger = []
 for uge_frem in range(0, 24):
     mål_mandag_dato = start_mandag_dato + timedelta(weeks=uge_frem)
-    alle_24_uger.append(f"{mål_mandag_dato.year}-Uge{mål_mandag_dato.isocalendar()[1]:02d}")
+    u_nr = mål_mandag_dato.isocalendar()[1]
+    # Tvinger præcis samme tekstformat (med foranstillet nul) som i ruteplanlægger-motoren
+    alle_24_uger.append(f"{mål_mandag_dato.year}-Uge{u_nr:02d}")
 
 valgt_uge = st.sidebar.selectbox("Vælg uge:", options=alle_24_uger)
 
@@ -388,7 +390,7 @@ else:
     st.subheader(f"📅 {konsulent_navn} — {valgt_uge}")
     st.markdown("---")
 
-    aktuelle_aftaler = [a for a in aftaler_liste if int(a["konsulent_id"]) == int(valgt_konsulent_id) and a["uge_id"] == valgt_uge]
+    aktuelle_aftaler = [a for a in aftaler_liste if int(a["konsulent_id"]) == int(valgt_konsulent_id) and str(a["uge_id"]) == str(valgt_uge)]
     visnings_slots = st.columns(5)
 
     for i, dag in enumerate(ALLE_DAGE_GLOBAL):
