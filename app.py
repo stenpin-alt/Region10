@@ -128,7 +128,7 @@ def hent_zone_og_farve(pnr):
     elif 8000 <= pnr_int <= 8999: return "Østjylland", "🔴"
     return "Nordjylland", "⚫"
 
-# --- CACHET RUTEMOTOR (MANGLER ALDRIG FASTE KUNDER MERE) ---
+# --- CACHET RUTEMOTOR ---
 @st.cache_data
 def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, valgt_loft):
     idag = datetime.now()
@@ -153,7 +153,8 @@ def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, v
             
             for kunde in kunder:
                 if int(kunde["konsulent_id"]) == int(k_id):
-                    frekvens = float(kunde["frekvens"])
+                    try: frekvens = float(kunde["frekvens"])
+                    except: frekvens = 1.0
                     k_id_int = int(kunde["id"])
                     
                     if frekvens >= 1.0:
@@ -165,11 +166,9 @@ def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, v
                         if uge_nummer % 4 == (k_id_int % 4):
                             skæve_kunder.append(kunde.copy())
             
-            # For at undgå udeladelser håndterer vi de faste og de skæve hver for sig
             håndterede_kunde_id_liste = set()
-
-            # 1. Håndter manuelle flytninger på tværs af ALLE ugens kunder først
             alle_kunder_i_uge = faste_kunder + skæve_kunder
+            
             for kunde in alle_kunder_i_uge:
                 unik_nøgle = f"{kunde['id']}-{uge_id}"
                 if unik_nøgle in manuelle_flytninger:
@@ -182,7 +181,6 @@ def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, v
                     })
                     håndterede_kunde_id_liste.add(kunde['id'])
 
-            # Filtrer manuelle væk fra vores automatiske lister
             faste_automatiske = [k for k in faste_kunder if k['id'] not in håndterede_kunde_id_liste]
             skæve_automatiske = [k for k in skæve_kunder if k['id'] not in håndterede_kunde_id_liste]
 
@@ -190,10 +188,9 @@ def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, v
             if not konsulent_arbejdsdage: 
                 konsulent_arbejdsdage = ALLE_DAGE_GLOBAL
 
-            # 2. TVING de ugentlige faste kunder ind på ruten (Overskrid loftet hvis nødvendigt!)
+            # TVING de faste ind
             for kunde in faste_automatiske:
                 placeret = False
-                # Prøv først under det normale loft
                 for dag in konsulent_arbejdsdage:
                     if global_tæller[uge_id][k_id][dag] < AUTOMATISK_LOFT:
                         global_tæller[uge_id][k_id][dag] += 1
@@ -205,7 +202,6 @@ def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, v
                         placeret = True
                         break
                 
-                # Hvis der er fyldt, så tving den ind på den dag med færrest kunder
                 if not placeret:
                     valgt_dag = min(konsulent_arbejdsdage, key=lambda d: global_tæller[uge_id][k_id][d])
                     global_tæller[uge_id][k_id][valgt_dag] += 1
@@ -215,7 +211,7 @@ def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, v
                         "uge_id": uge_id, "dag": valgt_dag
                     })
 
-            # 3. Placer de skæve kunder (kun hvis der er plads tilbage under det valgte loft)
+            # Placer skæve kunder
             for kunde in skæve_automatiske:
                 for dag in konsulent_arbejdsdage:
                     if global_tæller[uge_id][k_id][dag] < AUTOMATISK_LOFT:
@@ -277,7 +273,7 @@ if st.session_state['bruger_rolle'] == "admin":
                 
                 for idx, række in df_indlæst.iterrows():
                     v_navn = række[col_navn]; v_by = række[col_by]; v_pnr = række[col_postnr]; v_kons = str(række[col_konsulent]).strip()
-                    if pd.isna(v_navn) or pd.isna(v_by) or pd.isna(v_pnr) or v_kons not in icons_navn_til_id: continue
+                    if pd.isna(v_navn) or pd.isna(v_by) or pd.isna(v_pnr) or v_kons not in kons_navn_til_id: continue
                     
                     freq = 1.0  
                     if col_frek and not pd.isna(række[col_frek]):
@@ -324,17 +320,14 @@ aftaler_liste = beregn_ruter_cached(
     st.session_state['maks_kunder_pr_dag']
 )
 
-# --- SKIFT-KONSULENT CALLBACK ---
 def opdater_valgt_konsulent():
     st.session_state['aktivt_konsulent_id'] = st.session_state['sb_konsulent_valg']
 
-# --- VISNINGS LOGIK ---
 er_læse_bruger = False
 if st.session_state['bruger_rolle'] == "admin" or st.session_state['bruger_rolle'] == "chef":
     if st.session_state['bruger_rolle'] == "chef": er_læse_bruger = True
     if st.session_state['konsulenter']:
         konsulent_keys = list(st.session_state['konsulenter'].keys())
-        
         if st.session_state['aktivt_konsulent_id'] not in konsulent_keys:
             st.session_state['aktivt_konsulent_id'] = konsulent_keys[0]
             
@@ -380,7 +373,6 @@ if not er_læse_bruger and st.session_state['konsulenter']:
 else:
     valgte_dage = st.session_state['arbejdsdage'].get(str(valgt_konsulent_id), ALLE_DAGE_GLOBAL)
 
-# REEL OG SIKKER FORMERING AF DE 24 UGER TIL VISNING
 idag_dato = datetime.now()
 start_mandag_dato = idag_dato - timedelta(days=idag_dato.weekday())
 alle_24_uger = []
@@ -436,3 +428,16 @@ else:
                                     st.rerun()
                             else:
                                 st.markdown(f"<p style='margin:0px; font-size:11px; color:darkblue; font-weight:bold;'>📅 {dag}</p>", unsafe_allow_html=True)
+
+# --- DETTE ER DEN MIDLERTIDIGE NUKLEAR KNAP TIL DIG ---
+if st.session_state['bruger_rolle'] == "admin":
+    st.sidebar.markdown("<br><br><br><hr>", unsafe_allow_html=True)
+    if st.sidebar.button("⚠️ NULSTIL AL DATA PÅ SERVEREN", use_container_width=True):
+        for f in [FIL_KUNDER, FIL_KONSULENTER, FIL_FLYTNINGER]:
+            if os.path.exists(f): os.remove(f)
+        st.cache_data.clear()
+        st.session_state['kunder'] = []
+        st.session_state['konsulenter'] = {}
+        st.session_state['manuelle_flytninger'] = {}
+        st.sidebar.error("Server-filer slettet. Upload din Excel-fil nu!")
+        st.rerun()
