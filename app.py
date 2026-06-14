@@ -9,7 +9,7 @@ st.set_page_config(
     page_icon="logo.png"
 )
 
-# 100% sikker 2026-standard uden brug af 'use_container_width' nogen steder
+# 2026-standard for billedbredde
 st.sidebar.image("logo.png", width="stretch")
     
 # CSS-optimering med lodrette skillelinjer mellem ugedagene
@@ -128,7 +128,7 @@ def hent_zone_og_farve(pnr):
     elif 8000 <= pnr_int <= 8999: return "Østjylland", "🔴"
     return "Nordjylland", "⚫"
 
-# --- CACHET RUTEMOTOR ---
+# --- CACHET RUTEMOTOR (RETTET LOGIK FOR FASTE BESØG) ---
 @st.cache_data
 def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, valgt_loft):
     idag = datetime.now()
@@ -168,9 +168,10 @@ def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, v
                             skæve_kunder.append(kunde.copy())
             
             kunder_i_uge = faste_kunder + skæve_kunder
+            håndterede_kunde_id_liste = set()
 
-            # 1. Manuelle flytninger
-            for kunde in kunder_i_uge[:]:
+            # 1. Håndter manuelle flytninger først (uden at slette elementer midt i loopet)
+            for kunde in kunder_i_uge:
                 unik_nøgle = f"{kunde['id']}-{uge_id}"
                 if unik_nøgle in manuelle_flytninger:
                     man_dag = manuelle_flytninger[unik_nøgle]
@@ -180,10 +181,13 @@ def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, v
                         "by": kunde["by"], "postnr": kunde["postnr"], "konsulent_id": k_id,
                         "uge_id": uge_id, "dag": man_dag
                     })
-                    kunder_i_uge.remove(kunde)
+                    håndterede_kunde_id_liste.add(kunde['id'])
 
-            # 2. Automatisk ruteplacering
-            for kunde in kunder_i_uge:
+            # Filtrer de manuelt flyttede kunder ud på en sikker måde
+            kunder_til_automatisk_rute = [k for k in kunder_i_uge if k['id'] not in håndterede_kunde_id_liste]
+
+            # 2. Automatisk ruteplacering af de resterende (herunder de ugentlige faste)
+            for kunde in kunder_til_automatisk_rute:
                 placeret = False
                 konsulent_arbejdsdage = arbejdsdage.get(str(k_id), ALLE_DAGE_GLOBAL)
                 if not konsulent_arbejdsdage: 
