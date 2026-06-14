@@ -9,30 +9,27 @@ st.set_page_config(
     page_icon="logo.png"
 )
 
-# Rettet til den nye 2026-standard
+# 2026-standard for billedbredde
 st.sidebar.image("logo.png", width="stretch")
     
-# CSS-optimering med flotte lodrette skillelinjer mellem ugedagene
+# CSS-optimering med lodrette skillelinjer mellem ugedagene
 st.markdown("""
     <style>
         .block-container { padding-top: 1rem !important; padding-bottom: 1rem !important; }
         [data-testid="stVerticalBlock"] > div { padding-bottom: 0px !important; margin-bottom: 0px !important; }
         
-        /* Gør dropdown-menuerne indeni kundekortene små og kompakte */
         div.stSelectbox div[data-testid="stSelectboxWithDynamicOptions"] {
             transform: scale(0.9);
             transform-origin: left center;
         }
         .stAlert { padding: 8px !important; margin-bottom: 8px !important; }
         
-        /* --- DESIGN AF LODRETTE SKILLELINJER --- */
         div[data-testid="column"] {
             border-right: 1.5px solid #e6e9ef !important;
             padding-right: 15px !important;
             padding-left: 5px !important;
         }
         
-        /* Fjern linjen på den sidste kolonne (Fredag) */
         div[data-testid="column"]:last-child {
             border-right: none !important;
             padding-right: 5px !important;
@@ -86,6 +83,7 @@ if 'logget_ind' not in st.session_state: st.session_state['logget_ind'] = False
 if 'bruger_rolle' not in st.session_state: st.session_state['bruger_rolle'] = None
 if 'bruger_navn' not in st.session_state: st.session_state['bruger_navn'] = None
 if 'maks_kunder_pr_dag' not in st.session_state: st.session_state['maks_kunder_pr_dag'] = 8
+if 'aktivt_konsulent_id' not in st.session_state: st.session_state['aktivt_konsulent_id'] = None
 
 hent_data_fra_disken()
 
@@ -114,7 +112,7 @@ def tjek_login(brugernavn, kode):
             st.session_state['logget_ind'] = True
             st.session_state['bruger_rolle'] = "konsulent"
             st.session_state['bruger_navn'] = k_navn_fuld
-            st.session_state['valgt_konsulent_id_login'] = k_id
+            st.session_state['aktivt_konsulent_id'] = k_id
             return True
     return False
 
@@ -231,6 +229,7 @@ if st.sidebar.button("Log ud 🔓"):
     st.session_state['logget_ind'] = False
     st.session_state['konsulenter'] = {}
     st.session_state['kunder'] = []
+    st.session_state['aktivt_konsulent_id'] = None
     st.rerun()
 
 # --- EXCEL UPLOAD ---
@@ -275,6 +274,10 @@ if st.session_state['bruger_rolle'] == "admin":
                             
                     st.session_state['kunder'].append({"id": idx + 1000, "navn": str(v_navn).strip(), "by": str(v_by).strip(), "postnr": v_pnr, "frekvens": freq, "konsulent_id": kons_navn_til_id[v_kons]})
                 
+                # Standardindstil til første konsulent på listen efter nyt upload
+                if st.session_state['konsulenter']:
+                    st.session_state['aktivt_konsulent_id'] = list(st.session_state['konsulenter'].keys())[0]
+
                 gem_data_til_disken()
                 st.sidebar.success("Database opdateret!")
                 st.rerun()
@@ -303,6 +306,10 @@ aftaler_liste = beregn_ruter_cached(
     st.session_state['maks_kunder_pr_dag']
 )
 
+# --- SKIFT-KONSULENT CALLBACK SYNKRONISERING ---
+def opdater_valgt_konsulent():
+    st.session_state['aktivt_konsulent_id'] = st.session_state['sb_konsulent_valg']
+
 # --- VISNINGS LOGIK ---
 er_læse_bruger = False
 if st.session_state['bruger_rolle'] == "admin" or st.session_state['bruger_rolle'] == "chef":
@@ -310,20 +317,29 @@ if st.session_state['bruger_rolle'] == "admin" or st.session_state['bruger_rolle
     if st.session_state['konsulenter']:
         konsulent_keys = list(st.session_state['konsulenter'].keys())
         
-        # RETTET: Tilføjet en fast, statisk key så Streamlit ikke mister fokus på dit valg ved genindlæsninger
+        # Sikrer, at session state altid har et gyldigt ID tilgængeligt
+        if st.session_state['aktivt_konsulent_id'] not in konsulent_keys:
+            st.session_state['aktivt_konsulent_id'] = konsulent_keys[0]
+            
+        # Tvinger dropdown-menuen til at læse og skrive synkront til session_state vha. on_change callback
         valgt_konsulent_id = st.sidebar.selectbox(
             "Vis rute for:", 
             options=konsulent_keys, 
+            index=konsulent_keys.index(st.session_state['aktivt_konsulent_id']),
             format_func=lambda x: st.session_state['konsulenter'][x]["navn"],
-            key="valgt_konsulent_dropdown"
+            key="sb_konsulent_valg",
+            on_change=opdater_valgt_konsulent
         )
-        konsulent_navn = st.session_state['konsulenter'][valgt_konsulent_id]["navn"]
-    else: valgt_konsulent_id = 1; konsulent_navn = "Ingen data"
+        konsulent_navn = st.session_state['konsulenter'][st.session_state['aktivt_konsulent_id']]["navn"]
+    else:
+        st.session_state['aktivt_konsulent_id'] = 1
+        konsulent_navn = "Ingen data"
 else:
-    valgt_konsulent_id = st.session_state['valgt_konsulent_id_login']
     konsulent_navn = st.session_state['bruger_navn']
 
-if not er_læse_bruger:
+valgt_konsulent_id = st.session_state['aktivt_konsulent_id']
+
+if not er_læse_bruger and st.session_state['konsulenter']:
     st.sidebar.markdown("---")
     st.sidebar.header("⚙️ Indstillinger")
     
