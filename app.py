@@ -128,7 +128,7 @@ def hent_zone_og_farve(pnr):
     elif 8000 <= pnr_int <= 8999: return "Østjylland", "🔴"
     return "Nordjylland", "⚫"
 
-# --- CACHET RUTEMOTOR (RETTET LOGIK FOR FASTE BESØG) ---
+# --- CACHET RUTEMOTOR ---
 @st.cache_data
 def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, valgt_loft):
     idag = datetime.now()
@@ -170,7 +170,7 @@ def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, v
             kunder_i_uge = faste_kunder + skæve_kunder
             håndterede_kunde_id_liste = set()
 
-            # 1. Håndter manuelle flytninger først (uden at slette elementer midt i loopet)
+            # 1. Håndter manuelle flytninger
             for kunde in kunder_i_uge:
                 unik_nøgle = f"{kunde['id']}-{uge_id}"
                 if unik_nøgle in manuelle_flytninger:
@@ -183,10 +183,9 @@ def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, v
                     })
                     håndterede_kunde_id_liste.add(kunde['id'])
 
-            # Filtrer de manuelt flyttede kunder ud på en sikker måde
             kunder_til_automatisk_rute = [k for k in kunder_i_uge if k['id'] not in håndterede_kunde_id_liste]
 
-            # 2. Automatisk ruteplacering af de resterende (herunder de ugentlige faste)
+            # 2. Automatisk ruteplacering
             for kunde in kunder_til_automatisk_rute:
                 placeret = False
                 konsulent_arbejdsdage = arbejdsdage.get(str(k_id), ALLE_DAGE_GLOBAL)
@@ -236,7 +235,7 @@ if st.sidebar.button("Log ud 🔓"):
     st.session_state['aktivt_konsulent_id'] = None
     st.rerun()
 
-# --- EXCEL UPLOAD ---
+# --- EXCEL UPLOAD (MED INTELLIGENT FREKVENS-TJEK) ---
 if st.session_state['bruger_rolle'] == "admin":
     st.sidebar.header("📂 Admin: Excel Upload")
     uploaded_file = st.sidebar.file_uploader("Upload kundeliste", type=["xlsx", "xls"])
@@ -267,14 +266,19 @@ if st.session_state['bruger_rolle'] == "admin":
                     v_navn = række[col_navn]; v_by = række[col_by]; v_pnr = række[col_postnr]; v_kons = str(række[col_konsulent]).strip()
                     if pd.isna(v_navn) or pd.isna(v_by) or pd.isna(v_pnr) or v_kons not in kons_navn_til_id: continue
                     
-                    freq = 0.25
+                    # FORBEDRET INTELLIGENT FREKVENS-TJEK FOR FASTE KUNDER
+                    freq = 1.0  # Standardindstilling er nu FAST ugentlig, hvis feltet mangler data
                     if col_frek and not pd.isna(række[col_frek]):
-                        rå_værdi = str(række[col_frek]).strip().replace(',', '.')
-                        try: freq = float(rå_værdi)
-                        except ValueError:
-                            if "1" in rå_værdi: freq = 1.0
-                            elif "0.5" in rå_værdi or "0,5" in str(række[col_frek]): freq = 0.5
-                            else: freq = 0.25
+                        rå_værdi = str(række[col_frek]).strip().lower().replace(',', '.')
+                        
+                        if "1/1" in rå_værdi or "ugentlig" in rå_værdi or "fast" in rå_værdi:
+                            freq = 1.0
+                        else:
+                            try: freq = float(rå_værdi)
+                            except ValueError:
+                                if "0.5" in rå_værdi or "1/2" in rå_værdi: freq = 0.5
+                                elif "0.25" in rå_værdi or "1/4" in rå_værdi: freq = 0.25
+                                else: freq = 1.0 # Sikkerhedsmargin
                             
                     st.session_state['kunder'].append({"id": idx + 1000, "navn": str(v_navn).strip(), "by": str(v_by).strip(), "postnr": v_pnr, "frekvens": freq, "konsulent_id": kons_navn_til_id[v_kons]})
                 
