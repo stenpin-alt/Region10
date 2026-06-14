@@ -137,7 +137,7 @@ def hent_zone_og_farve(pnr):
     elif 8000 <= pnr_int <= 8999: return "Østjylland", "🔴"
     return "Nordjylland", "⚫"
 
-# --- RUTE MOTOR (MED DYNAMISK KUNDELØFT, 2-CIFRET UGE OG INTELLIGENT FREKVENS-SPREDNING) ---
+# --- RUTE MOTOR ---
 def kør_rullende_kalender_motor():
     idag = datetime.now()
     start_mandag = idag - timedelta(days=idag.weekday())
@@ -165,19 +165,16 @@ def kør_rullende_kalender_motor():
                     frekvens = float(kunde["frekvens"])
                     k_id_int = int(kunde["id"])
                     
-                    # Spreder besøg ud baseret på kundens ID for at undgå tomme uger
                     if frekvens >= 1.0:
                         kunder_i_uge.append(kunde.copy())
                     elif frekvens == 0.5:
-                        # Deler kunderne op i 2 hold (uge_nummer % 2 matcher enten 0 eller 1)
                         if uge_nummer % 2 == (k_id_int % 2):
                             kunder_i_uge.append(kunde.copy())
                     elif frekvens == 0.25:
-                        # Deler kunderne op i 4 hold (uge_nummer % 4 matcher 0, 1, 2 eller 3)
                         if uge_nummer % 4 == (k_id_int % 4):
                             kunder_i_uge.append(kunde.copy())
 
-            # 1. Manuelle flytninger låses fast
+            # 1. Manuelle flytninger
             for kunde in kunder_i_uge[:]:
                 unik_nøgle = f"{kunde['id']}-{uge_id}"
                 if unik_nøgle in st.session_state['manuelle_flytninger']:
@@ -260,7 +257,7 @@ if st.session_state['bruger_rolle'] == "admin":
                 st.session_state['kunder'] = []
                 for idx, række in df_indlæst.iterrows():
                     v_navn = række[col_navn]; v_by = række[col_by]; v_pnr = række[col_postnr]; v_kons = str(række[col_konsulent]).strip()
-                    if pd.isna(v_navn) or pd.isna(v_by) or pd.isna(v_pnr) or v_kons not in rooms_to_id: continue
+                    if pd.isna(v_navn) or pd.isna(v_by) or pd.isna(v_pnr) or v_kons not in kons_navn_til_id: continue
                     freq = 0.25
                     if col_frek and not pd.isna(række[col_frek]):
                         try: freq = float(str(række[col_frek]).replace(',', '.'))
@@ -338,7 +335,7 @@ else:
     if 'maks_kunder_pr_dag' not in st.session_state:
         st.session_state['maks_kunder_pr_dag'] = 8
 
-# --- GENERERING AF ALLE DE NÆSTE 24 UGER SÅ INGEN SPRINGS OVER ---
+# --- FIX: GENERERER KORREKT SAMTLIGE 24 UGER I RÆKKEFØLGE UDEN SPRING ---
 idag_dato = datetime.now()
 start_mandag_dato = idag_dato - timedelta(days=idag_dato.weekday())
 alle_24_uger = []
