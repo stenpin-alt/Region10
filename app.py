@@ -9,7 +9,7 @@ st.set_page_config(
     page_icon="logo.png"
 )
 
-# 2026-standard for billedbredde
+# Standard for billedbredde
 st.sidebar.image("logo.png", width="stretch")
     
 # CSS-optimering med lodrette skillelinjer mellem ugedagene
@@ -128,72 +128,70 @@ def hent_zone_og_farve(pnr):
     elif 8000 <= pnr_int <= 8999: return "Østjylland", "🔴"
     return "Nordjylland", "⚫"
 
-# --- CACHET RUTEMOTOR ---
+# --- STRUKTURERET RUTEMOTOR MED BALANCERET LOFT ---
 @st.cache_data
 def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, valgt_loft):
-    idag = datetime.now()
-    start_mandag = idag - timedelta(days=idag.weekday())
     beregnede_aftaler = []
+    aktuelt_aar = 2026
     
-    AUTOMATISK_LOFT = valgt_loft
-    global_tæller = {}
-
-    for uge_frem in range(0, 24):
-        mål_mandag = start_mandag + timedelta(weeks=uge_frem)
-        uge_nummer = mål_mandag.isocalendar()[1]
-        uge_id = f"{mål_mandag.year}-Uge{uge_nummer:02d}"
-        
-        if uge_id not in global_tæller: global_tæller[uge_id] = {}
+    for uge_nummer in range(1, 53):
+        uge_id = f"{aktuelt_aar}-Uge{uge_nummer:02d}"
         
         for k_id, k_info in konsulenter.items():
-            if k_id not in global_tæller[uge_id]: global_tæller[uge_id][k_id] = {d: 0 for d in ALLE_DAGE_GLOBAL}
+            konsulent_arbejdsdage = arbejdsdage.get(str(k_id), ALLE_DAGE_GLOBAL)
+            if not konsulent_arbejdsdage:
+                konsulent_arbejdsdage = ALLE_DAGE_GLOBAL
+                
+            dag_taeller = {d: 0 for d in ALLE_DAGE_GLOBAL}
+            handterede_kunde_ids = set()
             
-            faste_kunder = []
-            skæve_kunder = []
-            
+            # 1. Filtrer og sorter ugens kunder geografisk efter postnummer
+            ugens_kunder_pulje = []
             for kunde in kunder:
                 if int(kunde["konsulent_id"]) == int(k_id):
                     try: frekvens = float(kunde["frekvens"])
                     except: frekvens = 1.0
                     k_id_int = int(kunde["id"])
                     
+                    skal_besoeges = False
                     if frekvens >= 1.0:
-                        faste_kunder.append(kunde.copy())
-                    elif frekvens == 0.5:
-                        if uge_nummer % 2 == (k_id_int % 2):
-                            skæve_kunder.append(kunde.copy())
-                    elif frekvens == 0.25:
-                        if uge_nummer % 4 == (k_id_int % 4):
-                            skæve_kunder.append(kunde.copy())
+                        skal_besoeges = True
+                    elif frekvens == 0.5 and (uge_nummer % 2 == (k_id_int % 2)):
+                        skal_besoeges = True
+                    elif frekvens == 0.25 and (uge_nummer % 4 == (k_id_int % 4)):
+                        skal_besoeges = True
+                        
+                    if skal_besoeges:
+                        ugens_kunder_pulje.append(kunde.copy())
             
-            håndterede_kunde_id_liste = set()
-            alle_kunder_i_uge = faste_kunder + skæve_kunder
-            
-            for kunde in alle_kunder_i_uge:
-                unik_nøgle = f"{kunde['id']}-{uge_id}"
-                if unik_nøgle in manuelle_flytninger:
-                    man_dag = manuelle_flytninger[unik_nøgle]
-                    global_tæller[uge_id][k_id][man_dag] += 1
+            # Sorter geografisk så butikker tæt på hinanden følges ad til samme dag
+            try: ugens_kunder_pulje.sort(key=lambda x: int(''.join(filter(str.isdigit, str(x["postnr"])))))
+            except: pass
+
+            # 2. Håndter manuelle flytninger først
+            for kunde in ugens_kunder_pulje:
+                unik_noegle = f"{kunde['id']}-{uge_id}"
+                if unik_noegle in manuelle_flytninger:
+                    man_dag = manuelle_flytninger[unik_noegle]
+                    dag_taeller[man_dag] += 1
                     beregnede_aftaler.append({
-                        "id": unik_nøgle, "kunde_id": kunde["id"], "kundenavn": kunde["navn"],
+                        "id": unik_noegle, "kunde_id": kunde["id"], "kundenavn": kunde["navn"],
                         "by": kunde["by"], "postnr": kunde["postnr"], "konsulent_id": k_id,
                         "uge_id": uge_id, "dag": man_dag
                     })
-                    håndterede_kunde_id_liste.add(kunde['id'])
+                    handterede_kunde_ids.add(kunde['id'])
 
-            faste_automatiske = [k for k in faste_kunder if k['id'] not in håndterede_kunde_id_liste]
-            skæve_automatiske = [k for k in skæve_kunder if k['id'] not in håndterede_kunde_id_liste]
-
-            konsulent_arbejdsdage = arbejdsdage.get(str(k_id), ALLE_DAGE_GLOBAL)
-            if not konsulent_arbejdsdage: 
-                konsulent_arbejdsdage = ALLE_DAGE_GLOBAL
-
-            # TVING de faste ind
-            for kunde in faste_automatiske:
+            # 3. Fordel de resterende automatiske kunder jævnt under loftet
+            automatiske_kunder = [k for k in ugens_kunder_pulje if k['id'] not in handterede_kunde_ids]
+            
+            for kunde in automatiske_kunder:
                 placeret = False
-                for dag in konsulent_arbejdsdage:
-                    if global_tæller[uge_id][k_id][dag] < AUTOMATISK_LOFT:
-                        global_tæller[uge_id][k_id][dag] += 1
+                # Find den tilgængelige arbejdsdag med færrest kunder, som stadig er under loftet
+                sorterede_arbejdsdage = sorted(konsulent_arbejdsdage, key=lambda d: dag_taeller[d])
+                
+                for dag in sorterede_arbejdsdage:
+                    if dag_taeller[dag] < valgt_loft:
+                        dag_taeller[dag] += 1
                         beregnede_aftaler.append({
                             "id": f"{kunde['id']}-{uge_id}", "kunde_id": kunde["id"], "kundenavn": kunde["navn"],
                             "by": kunde["by"], "postnr": kunde["postnr"], "konsulent_id": k_id,
@@ -202,26 +200,16 @@ def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, v
                         placeret = True
                         break
                 
+                # Nødventil: Hvis ALLE arbejdsdage har ramt loftet, må vi overskride jævnt for ikke at smide kunden ud
                 if not placeret:
-                    valgt_dag = min(konsulent_arbejdsdage, key=lambda d: global_tæller[uge_id][k_id][d])
-                    global_tæller[uge_id][k_id][valgt_dag] += 1
+                    valgt_dag = min(konsulent_arbejdsdage, key=lambda d: dag_taeller[d])
+                    dag_taeller[valgt_dag] += 1
                     beregnede_aftaler.append({
                         "id": f"{kunde['id']}-{uge_id}", "kunde_id": kunde["id"], "kundenavn": kunde["navn"],
                         "by": kunde["by"], "postnr": kunde["postnr"], "konsulent_id": k_id,
                         "uge_id": uge_id, "dag": valgt_dag
                     })
-
-            # Placer skæve kunder
-            for kunde in skæve_automatiske:
-                for dag in konsulent_arbejdsdage:
-                    if global_tæller[uge_id][k_id][dag] < AUTOMATISK_LOFT:
-                        global_tæller[uge_id][k_id][dag] += 1
-                        beregnede_aftaler.append({
-                            "id": f"{kunde['id']}-{uge_id}", "kunde_id": kunde["id"], "kundenavn": kunde["navn"],
-                            "by": kunde["by"], "postnr": kunde["postnr"], "konsulent_id": k_id,
-                            "uge_id": uge_id, "dag": dag
-                        })
-                        break
+                    
     return beregnede_aftaler
 
 # --- LOGIN SKÆRM ---
@@ -264,7 +252,6 @@ if st.session_state['bruger_rolle'] == "admin":
             
             if col_navn and col_by and col_postnr:
                 unikke_kons_navne = sorted(df_indlæst[col_konsulent].dropna().unique())
-                
                 st.cache_data.clear()
                 
                 st.session_state['konsulenter'] = {i+1: {"navn": str(n).strip()} for i, n in enumerate(unikke_kons_navne)}
@@ -352,7 +339,7 @@ if not er_læse_bruger and st.session_state['konsulenter']:
     st.sidebar.markdown("---")
     st.sidebar.header("⚙️ Indstillinger")
     
-    nyt_loft = st.sidebar.slider("Maks kunder pr. dag:", min_value=5, max_value=15, value=st.session_state['maks_kunder_pr_dag'], step=1)
+    nyt_loft = st.sidebar.slider("Maks kunder pr. dag:", min_value=3, max_value=15, value=st.session_state['maks_kunder_pr_dag'], step=1)
     if nyt_loft != st.session_state['maks_kunder_pr_dag']:
         st.session_state['maks_kunder_pr_dag'] = nyt_loft
         st.cache_data.clear()
@@ -373,15 +360,18 @@ if not er_læse_bruger and st.session_state['konsulenter']:
 else:
     valgte_dage = st.session_state['arbejdsdage'].get(str(valgt_konsulent_id), ALLE_DAGE_GLOBAL)
 
-idag_dato = datetime.now()
-start_mandag_dato = idag_dato - timedelta(days=idag_dato.weekday())
-alle_24_uger = []
-for uge_frem in range(0, 24):
-    mål_mandag_dato = start_mandag_dato + timedelta(weeks=uge_frem)
-    u_nr = mål_mandag_dato.isocalendar()[1]
-    alle_24_uger.append(f"{mål_mandag_dato.year}-Uge{u_nr:02d}")
+# --- FAST GENERERING AF UGER (01-52) FOR SIKKER DRIFT VED UGESKIFT ---
+alle_52_uger = [f"2026-Uge{u:02d}" for u in range(1, 53)]
 
-valgt_uge = st.sidebar.selectbox("Vælg uge:", options=alle_24_uger)
+# Find nuværende reelle uge som standardvalg i listen
+reelt_ugenummer = datetime.now().isocalendar()[1]
+standard_uge_streng = f"2026-Uge{reelt_ugenummer:02d}"
+if standard_uge_streng not in alle_52_uger:
+    standard_uge_idx = 23 # Default til Uge 24 hvis uden for rammen
+else:
+    standard_uge_idx = alle_52_uger.index(standard_uge_streng)
+
+valgt_uge = st.sidebar.selectbox("Vælg uge:", options=alle_52_uger, index=standard_uge_idx)
 
 st.title("🗺️ Convenience Ruteplanlægger @ Royal Unibrew")
 
@@ -429,7 +419,7 @@ else:
                             else:
                                 st.markdown(f"<p style='margin:0px; font-size:11px; color:darkblue; font-weight:bold;'>📅 {dag}</p>", unsafe_allow_html=True)
 
-# --- DETTE ER DEN MIDLERTIDIGE NUKLEAR KNAP TIL DIG ---
+# --- NULSTIL KNAP ---
 if st.session_state['bruger_rolle'] == "admin":
     st.sidebar.markdown("<br><br><br><hr>", unsafe_allow_html=True)
     if st.sidebar.button("⚠️ NULSTIL AL DATA PÅ SERVEREN", use_container_width=True):
