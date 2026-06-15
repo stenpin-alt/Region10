@@ -128,7 +128,7 @@ def hent_zone_og_farve(pnr):
     elif 8000 <= pnr_int <= 8999: return "Østjylland", "🔴"
     return "Nordjylland", "⚫"
 
-# --- AVANCERET RUTEMOTOR MED CYKLISK RULLENDE FORDELING ---
+# --- AVANCERET RUTEMOTOR BASERET PÅ FREKVENS & BESØG PR UGE ---
 @st.cache_data
 def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, valgt_loft):
     beregnede_aftaler = []
@@ -149,7 +149,7 @@ def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, v
         if not konsulent_kunder:
             continue
             
-        # Den rullende pointer husker hvor i listen vi slap, så vi ikke nulstiller hver uge!
+        # Den rullende pointer husker hvor i listen vi slap
         kunde_index_pointer = 0
         samlet_antal_kunder = len(konsulent_kunder)
         
@@ -160,68 +160,83 @@ def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, v
             ugens_planlagte_kunde_ids = set()
             
             # --- 1. MANUELLE FLYTNINGER HAR FØRSTERET ---
+            # Understøtter potentielt flere unikke besøgs-slots for samme kunde i samme uge ved hjælp af et besøgs-index i id'et
             for kunde in konsulent_kunder:
-                unik_noegle = f"{kunde['id']}-{uge_id}"
-                if unik_noegle in manuelle_flytninger:
-                    man_dag = manuelle_flytninger[unik_noegle]
-                    if man_dag in konsulent_arbejdsdage:
-                        dag_taeller[man_dag] += 1
-                        beregnede_aftaler.append({
-                            "id": unik_noegle, "kunde_id": kunde["id"], "kundenavn": kunde["navn"],
-                            "by": kunde["by"], "postnr": kunde["postnr"], "konsulent_id": k_id,
-                            "uge_id": uge_id, "dag": man_dag
-                        })
-                        ugens_planlagte_kunde_ids.add(kunde['id'])
+                try: besøg_pr_uge = int(kunde.get("besoeg_pr_uge", 1))
+                except: besøg_pr_uge = 1
+                
+                for b_idx in range(besøg_pr_uge):
+                    unik_noegle = f"{kunde['id']}-{uge_id}-b{b_idx}"
+                    if unik_noegle in manuelle_flytninger:
+                        man_dag = manuelle_flytninger[unik_noegle]
+                        if man_dag in konsulent_arbejdsdage:
+                            dag_taeller[man_dag] += 1
+                            beregnede_aftaler.append({
+                                "id": unik_noegle, "kunde_id": kunde["id"], "kundenavn": kunde["navn"],
+                                "by": kunde["by"], "postnr": kunde["postnr"], "konsulent_id": k_id,
+                                "uge_id": uge_id, "dag": man_dag
+                            })
+                            ugens_planlagte_kunde_ids.add(f"{kunde['id']}-b{b_idx}")
 
-            # --- 2. AUTOMATISK RULLENDE FORDELING UNDER LOFTET ---
+            # --- 2. AUTOMATISK FORDELING BASERET PÅ BESØGS-LOGIK ---
             forsøg_tæller = 0
-            # Bliv ved med at fylde ugens dage, så længe der er plads på mindst én arbejdsdag,
-            # og vi ikke har løbet hele kartoteket igennem for denne uge endnu
             while any(dag_taeller[d] < valgt_loft for d in konsulent_arbejdsdage) and forsøg_tæller < samlet_antal_kunder:
                 kunde = konsulent_kunder[kunde_index_pointer]
                 forsøg_tæller += 1
                 
-                # Hvis kunden allerede er håndteret i denne uge via manuel flytning, ruller vi videre
-                if kunde['id'] in ugens_planlagte_kunde_ids:
-                    kunde_index_pointer = (kunde_index_pointer + 1) % samlet_antal_kunder
-                    continue
-                
                 try: frekvens = float(kunde["frekvens"])
                 except: frekvens = 1.0
                 
-                # Respekter frekvensintervaller
-                skal_besøges = True
-                if frekvens == 0.5 and (uge_nummer % 2 != (int(kunde["id"]) % 2)): skal_besøges = False
-                if frekvens == 0.25 and (uge_nummer % 4 != (int(kunde["id"]) % 4)): skal_besøges = False
+                try: besøg_pr_uge = int(kunde.get("besoeg_pr_uge", 1))
+                except: besøg_pr_uge = 1
                 
-                if skal_besøges:
-                    # Find den dag med færrest planlagte kunder lige nu
-                    ledige_dage = sorted(konsulent_arbejdsdage, key=lambda d: dag_taeller[d])
-                    placeret = False
-                    for dag in ledige_dage:
-                        if dag_taeller[dag] < valgt_loft:
-                            dag_taeller[dag] += 1
+                # Respekter uge-frekvensintervaller
+                skal_besøges_i_denne_uge = True
+                if frekvens == 0.5 and (uge_nummer % 2 != (int(kunde["id"]) % 2)): skal_besøges_i_denne_uge = False
+                if frekvens == 0.25 and (uge_nummer % 4 != (int(kunde["id"]) % 4)): skal_besøges_i_denne_uge = False
+                
+                if skal_besøges_i_denne_uge:
+                    # En kunde kan have behov for flere besøg i den samme uge
+                    for b_idx in range(besøg_pr_uge):
+                        slot_id = f"{kunde['id']}-b{b_idx}"
+                        
+                        # Hvis dette specifikke besøg allerede er manuelt flyttet, springer vi det over her
+                        if slot_id in [f"{kunde['id']}-b{b_idx}" for slot_id in ugens_planlagte_kunde_ids]:
+                            continue
+                        
+                        # Find ugens ledige dage og sorter efter mindst belastning
+                        ledige_dage = sorted(konsulent_arbejdsdage, key=lambda d: dag_taeller[d])
+                        
+                        # Hvis det er besøg nr. 2 eller flere i samme uge, forsøger vi at undgå at lægge det på samme dag
+                        allerede_planlagte_dage_for_kunde = [a["dag"] for a in beregnede_aftaler if a["kunde_id"] == kunde["id"] and a["uge_id"] == uge_id]
+                        if len(allerede_planlagte_dage_for_kunde) > 0 and len(ledige_dage) > len(allerede_planlagte_dage_for_kunde):
+                            ledige_dage = sorted(ledige_dage, key=lambda d: (d in allerede_planlagte_dage_for_kunde, dag_taeller[d]))
+                        
+                        placeret = False
+                        for dag in ledige_dage:
+                            if dag_taeller[dag] < valgt_loft:
+                                dag_taeller[dag] += 1
+                                beregnede_aftaler.append({
+                                    "id": f"{kunde['id']}-{uge_id}-b{b_idx}", "kunde_id": kunde["id"], "kundenavn": kunde["navn"],
+                                    "by": kunde["by"], "postnr": kunde["postnr"], "konsulent_id": k_id,
+                                    "uge_id": uge_id, "dag": dag
+                                })
+                                ugens_planlagte_kunde_ids.add(slot_id)
+                                placeret = True
+                                break
+                        
+                        # Hvis der absolut ikke er plads på nogen arbejdsdage til dette besøg, sendes det til overskudskurven
+                        if not placeret:
                             beregnede_aftaler.append({
-                                "id": f"{kunde['id']}-{uge_id}", "kunde_id": kunde["id"], "kundenavn": kunde["navn"],
+                                "id": f"{kunde['id']}-{uge_id}-b{b_idx}", "kunde_id": kunde["id"], "kundenavn": kunde["navn"],
                                 "by": kunde["by"], "postnr": kunde["postnr"], "konsulent_id": k_id,
-                                "uge_id": uge_id, "dag": dag
+                                "uge_id": uge_id, "dag": "Ikke plads"
                             })
-                            ugens_planlagte_kunde_ids.add(kunde['id'])
-                            placeret = True
-                            break
-                    
-                    # Hvis kunden skal besøges, men der absolut ikke er plads på nogen af dagene, ryger den i overskudskurven
-                    if not placeret:
-                        beregnede_aftaler.append({
-                            "id": f"{kunde['id']}-{uge_id}", "kunde_id": kunde["id"], "kundenavn": kunde["navn"],
-                            "by": kunde["by"], "postnr": kunde["postnr"], "konsulent_id": k_id,
-                            "uge_id": uge_id, "dag": "Ikke plads"
-                        })
-                        ugens_planlagte_kunde_ids.add(kunde['id'])
+                            ugens_planlagte_kunde_ids.add(slot_id)
                             
                 # Pointeren flytter sig permanent til næste kunde i det samlede kartotek
                 kunde_index_pointer = (kunde_index_pointer + 1) % samlet_antal_kunder
-                        
+                                
     return beregnede_aftaler
 
 # --- LOGIN SKÆRM ---
@@ -256,11 +271,16 @@ if st.session_state['bruger_rolle'] == "admin":
             col_navn = "Navn" if "Navn" in df_indlæst.columns else None
             col_by = "By" if "By" in df_indlæst.columns else None
             col_frek = "Besøgs frekvens" if "Besøgs frekvens" in df_indlæst.columns else None
+            col_besoeg_pr_uge = "besøg pr uge" if "besøg pr uge" in df_indlæst.columns else None
             col_postnr = "Postnr" if "Postnr" in df_indlæst.columns else None
             
             if not col_postnr:
                 for c in df_indlæst.columns:
                     if "post" in c.lower() or "pnr" in c.lower(): col_postnr = c; break
+            
+            if not col_besoeg_pr_uge:
+                for c in df_indlæst.columns:
+                    if "besøg pr" in c.lower() or "pr uge" in c.lower(): col_besoeg_pr_uge = c; break
             
             if col_navn and col_by and col_postnr:
                 unikke_kons_navne = sorted(df_indlæst[col_konsulent].dropna().unique())
@@ -287,16 +307,28 @@ if st.session_state['bruger_rolle'] == "admin":
                                 if "0.5" in rå_værdi or "1/2" in rå_værdi: freq = 0.5
                                 elif "0.25" in rå_værdi or "1/4" in rå_værdi: freq = 0.25
                                 else: freq = 1.0
-                            
-                    st.session_state['kunder'].append({"id": idx + 1000, "navn": str(v_navn).strip(), "by": str(v_by).strip(), "postnr": v_pnr, "frekvens": freq, "konsulent_id": kons_navn_til_id[v_kons]})
+                    
+                    # Indlæs besøg pr uge (Standardiseret til 1, hvis der mangler data)
+                    b_pr_uge = 1
+                    if col_besoeg_pr_uge and not pd.isna(række[col_besoeg_pr_uge]):
+                        try: b_pr_uge = int(række[col_besoeg_pr_uge])
+                        except: b_pr_uge = 1
+                                    
+                    st.session_state['kunder'].append({
+                        "id": idx + 1000, 
+                        "navn": str(v_navn).strip(), 
+                        "by": str(v_by).strip(), 
+                        "postnr": v_pnr, 
+                        "frekvens": freq, 
+                        "besoeg_pr_uge": b_pr_uge,
+                        "konsulent_id": kons_navn_til_id[v_kons]
+                    })
                 
                 if st.session_state['konsulenter']:
                     st.session_state['aktivt_konsulent_id'] = list(st.session_state['konsulenter'].keys())[0]
 
                 gem_data_til_disken()
                 st.sidebar.success("Database opdateret!")
-                
-                # HER SKER MAGIEN: Tvinger browseren til automatisk refresh!
                 st.rerun()
         except Exception as e: st.sidebar.error(f"Fejl under indlæsning: {e}")
 
