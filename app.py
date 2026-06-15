@@ -128,7 +128,7 @@ def hent_zone_og_farve(pnr):
     elif 8000 <= pnr_int <= 8999: return "Østjylland", "🔴"
     return "Nordjylland", "⚫"
 
-# --- AVANCERET RUTEMOTOR MED CYKLISK FORDELING OG HÅRDT LOFT ---
+# --- AVANCERET RUTEMOTOR MED CYKLISK RULLENDE FORDELING ---
 @st.cache_data
 def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, valgt_loft):
     beregnede_aftaler = []
@@ -139,18 +139,25 @@ def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, v
         if not konsulent_arbejdsdage:
             konsulent_arbejdsdage = ALLE_DAGE_GLOBAL
             
-        # Filtrer alle konsulentens kunder ud fra databasen
-        konsulent_kunder = [k for k in kunder if int(k["konsulent_id"]) == int(k_id)]
-        
         # Sorter geografisk efter postnummer så nære områder følges ad
-        try: konsulent_kunder.sort(key=lambda x: int(''.join(filter(str.isdigit, str(x["postnr"])))))
-        except: pass
+        konsulent_kunder = [k for k in kunder if int(k["konsulent_id"]) == int(k_id)]
+        try:
+            konsulent_kunder.sort(key=lambda x: int(''.join(filter(str.isdigit, str(x["postnr"])))))
+        except:
+            pass
+            
+        if not konsulent_kunder:
+            continue
+            
+        # Den rullende pointer husker hvor i listen vi slap, så vi ikke nulstiller hver uge!
+        kunde_index_pointer = 0
+        samlet_antal_kunder = len(konsulent_kunder)
         
-        # Vi cykler igennem uge for uge (1-52)
+        # Vi cykler kontinuerligt hen over ugerne (1-52)
         for uge_nummer in range(1, 53):
             uge_id = f"{aktuelt_aar}-Uge{uge_nummer:02d}"
             dag_taeller = {d: 0 for d in ALLE_DAGE_GLOBAL}
-            handterede_kunde_ids = set()
+            ugens_planlagte_kunde_ids = set()
             
             # --- 1. MANUELLE FLYTNINGER HAR FØRSTERET ---
             for kunde in konsulent_kunder:
@@ -164,51 +171,57 @@ def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, v
                             "by": kunde["by"], "postnr": kunde["postnr"], "konsulent_id": k_id,
                             "uge_id": uge_id, "dag": man_dag
                         })
-                        handterede_kunde_ids.add(kunde['id'])
+                        ugens_planlagte_kunde_ids.add(kunde['id'])
 
-            # --- 2. AUTOMATISK CYKLISK FORDELING UNDER LOFTET ---
-            # Vi kigger kun på kunder, som ikke allerede er flyttet manuelt i denne uge
-            resterende_pulje = [k for k in konsulent_kunder if k['id'] not in handterede_kunde_ids]
-            
-            for index, kunde in enumerate(resterende_pulje):
+            # --- 2. AUTOMATISK RULLENDE FORDELING UNDER LOFTET ---
+            forsøg_tæller = 0
+            # Bliv ved med at fylde ugens dage, så længe der er plads på mindst én arbejdsdag,
+            # og vi ikke har løbet hele kartoteket igennem for denne uge endnu
+            while any(dag_taeller[d] < valgt_loft for d in konsulent_arbejdsdage) and forsøg_tæller < samlet_antal_kunder:
+                kunde = konsulent_kunder[kunde_index_pointer]
+                forsøg_tæller += 1
+                
+                # Hvis kunden allerede er håndteret i denne uge via manuel flytning, ruller vi videre
+                if kunde['id'] in ugens_planlagte_kunde_ids:
+                    kunde_index_pointer = (kunde_index_pointer + 1) % samlet_antal_kunder
+                    continue
+                
                 try: frekvens = float(kunde["frekvens"])
                 except: frekvens = 1.0
                 
-                # Bestem om kunden ud fra sin frekvens overhovedet skal besøges i denne uge
-                skal_besoeges = False
-                if frekvens >= 1.0:
-                    skal_besoeges = True
-                elif frekvens == 0.5 and (uge_nummer % 2 == (int(kunde["id"]) % 2)):
-                    skal_besoeges = True
-                elif frekvens == 0.25 and (uge_nummer % 4 == (int(kunde["id"]) % 4)):
-                    skal_besoeges = True
+                # Respekter frekvensintervaller
+                skal_besøges = True
+                if frekvens == 0.5 and (uge_nummer % 2 != (int(kunde["id"]) % 2)): skal_besøges = False
+                if frekvens == 0.25 and (uge_nummer % 4 != (int(kunde["id"]) % 4)): skal_besøges = False
                 
-                if not skal_besoeges:
-                    continue
-                
-                # Find den optimale dag: Sorter arbejdsdagene efter hvem der har færrest kunder lige nu
-                ledige_dage = sorted(konsulent_arbejdsdage, key=lambda d: dag_taeller[d])
-                
-                placeret = False
-                for dag in ledige_dage:
-                    if dag_taeller[dag] < valgt_loft:
-                        dag_taeller[dag] += 1
+                if skal_besøges:
+                    # Find den dag med færrest planlagte kunder lige nu
+                    ledige_dage = sorted(konsulent_arbejdsdage, key=lambda d: dag_taeller[d])
+                    placeret = False
+                    for dag in ledige_dage:
+                        if dag_taeller[dag] < valgt_loft:
+                            dag_taeller[dag] += 1
+                            beregnede_aftaler.append({
+                                "id": f"{kunde['id']}-{uge_id}", "kunde_id": kunde["id"], "kundenavn": kunde["navn"],
+                                "by": kunde["by"], "postnr": kunde["postnr"], "konsulent_id": k_id,
+                                "uge_id": uge_id, "dag": dag
+                            })
+                            ugens_planlagte_kunde_ids.add(kunde['id'])
+                            placeret = True
+                            break
+                    
+                    # Hvis kunden skal besøges, men der absolut ikke er plads på nogen af dagene, ryger den i overskudskurven
+                    if not placeret:
                         beregnede_aftaler.append({
                             "id": f"{kunde['id']}-{uge_id}", "kunde_id": kunde["id"], "kundenavn": kunde["navn"],
                             "by": kunde["by"], "postnr": kunde["postnr"], "konsulent_id": k_id,
-                            "uge_id": uge_id, "dag": dag
+                            "uge_id": uge_id, "dag": "Ikke plads"
                         })
-                        placeret = True
-                        break
-                
-                # Hvis alle dage har nået maks-loftet, skubbes kunden i overskudskurven for denne uge
-                if not placeret:
-                    beregnede_aftaler.append({
-                        "id": f"{kunde['id']}-{uge_id}", "kunde_id": kunde["id"], "kundenavn": kunde["navn"],
-                        "by": kunde["by"], "postnr": kunde["postnr"], "konsulent_id": k_id,
-                        "uge_id": uge_id, "dag": "Ikke plads"
-                    })
-                    
+                        ugens_planlagte_kunde_ids.add(kunde['id'])
+                            
+                # Pointeren flytter sig permanent til næste kunde i det samlede kartotek
+                kunde_index_pointer = (kunde_index_pointer + 1) % samlet_antal_kunder
+                        
     return beregnede_aftaler
 
 # --- LOGIN SKÆRM ---
@@ -231,7 +244,7 @@ if st.sidebar.button("Log ud 🔓"):
     st.session_state['aktivt_konsulent_id'] = None
     st.rerun()
 
-# --- EXCEL UPLOAD ---
+# --- EXCEL UPLOAD MED AUTOMATISK RE-RUN ---
 if st.session_state['bruger_rolle'] == "admin":
     st.sidebar.header("📂 Admin: Excel Upload")
     uploaded_file = st.sidebar.file_uploader("Upload kundeliste", type=["xlsx", "xls"])
@@ -251,6 +264,8 @@ if st.session_state['bruger_rolle'] == "admin":
             
             if col_navn and col_by and col_postnr:
                 unikke_kons_navne = sorted(df_indlæst[col_konsulent].dropna().unique())
+                
+                # Nulstil gammel cache med det samme inden indlæsning
                 st.cache_data.clear()
                 
                 st.session_state['konsulenter'] = {i+1: {"navn": str(n).strip()} for i, n in enumerate(unikke_kons_navne)}
@@ -280,6 +295,8 @@ if st.session_state['bruger_rolle'] == "admin":
 
                 gem_data_til_disken()
                 st.sidebar.success("Database opdateret!")
+                
+                # HER SKER MAGIEN: Tvinger browseren til automatisk refresh!
                 st.rerun()
         except Exception as e: st.sidebar.error(f"Fejl under indlæsning: {e}")
 
