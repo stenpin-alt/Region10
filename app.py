@@ -495,7 +495,7 @@ else:
 if st.session_state['bruger_rolle'] == "admin":
     st.sidebar.markdown("<br><br><br><hr>", unsafe_allow_html=True)
     # Rettet deprecation-fejl til det nye 2026-format
-    if st.sidebar.button("⚠️ NULSTIL AL DATA PÅ SERVEREN", width="use_container_width"):
+    if st.sidebar.button("⚠️ NULSTIL AL DATA PÅ SERVEREN", use_container_width=True):
         for f in [FIL_KUNDER, FIL_KONSULENTER, FIL_FLYTNINGER]:
             if os.path.exists(f): os.remove(f)
         st.cache_data.clear()
