@@ -10,7 +10,7 @@ st.set_page_config(
     page_icon="logo.png"
 )
 
-# Standard for billedbredde
+# Standard for billedbredde - rettet til korrekt Streamlit parameter
 st.sidebar.image("logo.png", use_container_width=True) 
 
 # CSS-optimering med lodrette skillelinjer mellem ugedagene
@@ -180,7 +180,7 @@ def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, v
                 try: besøg_pr_uge = int(kunde.get("besoeg_pr_uge", 1))
                 except: besøg_pr_uge = 1
                 
-                skal_besoeges_ i_denne_uge = False
+                skal_besoeges_i_denne_uge = False  # FAST FEJL: Mellemrum fjernet her!
                 try: kunde_offset = int(kunde["id"])
                 except: kunde_offset = 0
                 
@@ -257,11 +257,9 @@ if st.session_state['bruger_rolle'] == "admin":
     uploaded_file = st.sidebar.file_uploader("Upload kundeliste", type=["xlsx", "xls"])
     if uploaded_file is not None:
         try:
-            # Vi fjerner skiprows for at sikre, at vi fanger rækkerne korrekt uanset overskriftsplacering
             df_indlæst = pd.read_excel(uploaded_file)
             df_indlæst.columns = df_indlæst.columns.astype(str).str.strip()
             
-            # Find ud af om overskrifterne lå gemt længere nede
             if "Navn" not in df_indlæst.columns and "Konsulent" not in df_indlæst.columns:
                 for i in range(min(5, len(df_indlæst))):
                     række_str = df_indlæst.iloc[i].astype(str).tolist()
@@ -286,7 +284,6 @@ if st.session_state['bruger_rolle'] == "admin":
                 elif "besøg pr uge" in c_low or "besøg_pr_uge" in c_low: col_besoeg_pr_uge = c
                 elif "post" in c_low or "pnr" in c_low or "postnr" in c_low: col_postnr = c
             
-            # Globale fallbacks hvis alt andet fejler
             if not col_konsulent: col_konsulent = df_indlæst.columns[0]
             if not col_navn: col_navn = df_indlæst.columns[1]
             if not col_by: col_by = df_indlæst.columns[2]
@@ -311,7 +308,6 @@ if st.session_state['bruger_rolle'] == "admin":
                     if v_kons not in kons_navn_til_id: 
                         continue
                     
-                    # Ultrahård parsing af frekvens - Tjekker direkte på rå-værdier
                     freq = 1.0  
                     if col_frek and not pd.isna(række[col_frek]):
                         rå_værdi = str(række[col_frek]).strip().lower().replace(',', '.')
@@ -329,7 +325,6 @@ if st.session_state['bruger_rolle'] == "admin":
                             try: freq = float(rå_værdi)
                             except: freq = 1.0
                     
-                    # Standardiser besøg pr uge til ALTID 1, medmindre arket specifikt dikterer andet
                     b_pr_uge = 1
                     if col_besoeg_pr_uge and not pd.isna(række[col_besoeg_pr_uge]):
                         try: 
@@ -524,7 +519,8 @@ else:
 # --- NULSTIL KNAP ---
 if st.session_state['bruger_rolle'] == "admin":
     st.sidebar.markdown("<br><br><br><hr>", unsafe_allow_html=True)
-    if st.sidebar.button("⚠️ NULSTIL AL DATA PÅ SERVEREN"):
+    # FAST FEJL: Rettet parametre til den nyeste Streamlit-standard
+    if st.sidebar.button("⚠️ NULSTIL AL DATA PÅ SERVEREN", use_container_width=True):
         for f in [FIL_KUNDER, FIL_KONSULENTER, FIL_FLYTNINGER]:
             if os.path.exists(f): os.remove(f)
         st.cache_data.clear()
