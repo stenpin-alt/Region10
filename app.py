@@ -257,40 +257,53 @@ if st.session_state['bruger_rolle'] == "admin":
     uploaded_file = st.sidebar.file_uploader("Upload kundeliste", type=["xlsx", "xls"])
     if uploaded_file is not None:
         try:
+            # Læs råt uden datatypetvingning først for maksimal fleksibilitet
             df_indlæst = pd.read_excel(uploaded_file, skiprows=2)
             df_indlæst.columns = df_indlæst.columns.astype(str).str.strip()
-            col_konsulent = "Konsulent" if "Konsulent" in df_indlæst.columns else df_indlæst.columns[0]
-            col_navn = "Navn" if "Navn" in df_indlæst.columns else None
-            col_by = "By" if "By" in df_indlæst.columns else None
-            col_frek = "Besøgs frekvens" if "Besøgs frekvens" in df_indlæst.columns else None
-            col_besoeg_pr_uge = "besøg pr uge" if "besøg pr uge" in df_indlæst.columns else None
-            col_postnr = "Postnr" if "Postnr" in df_indlæst.columns else None
             
-            if not col_postnr:
-                for c in df_indlæst.columns:
-                    if "post" in c.lower() or "pnr" in c.lower(): col_postnr = c; break
+            # Smart kolonne-detektering uanset stavefejl eller ekstra mellemrum
+            col_konsulent = None
+            col_navn = None
+            col_by = None
+            col_frek = None
+            col_besoeg_pr_uge = None
+            col_postnr = None
             
-            if not col_besoeg_pr_uge:
-                for c in df_indlæst.columns:
-                    if "besøg pr" in c.lower() or "pr uge" in c.lower(): col_besoeg_pr_uge = c; break
+            for c in df_indlæst.columns:
+                c_low = c.lower()
+                if "konsulent" in c_low: col_konsulent = c
+                elif "navn" in c_low: col_navn = c
+                elif "by" in c_low and "udby" not in c_low: col_by = c
+                elif "frek" in c_low or "besøgs" in c_low: col_frek = c
+                elif "besøg pr" in c_low or "pr uge" in c_low: col_besoeg_pr_uge = c
+                elif "post" in c_low or "pnr" in c_low: col_postnr = c
+            
+            # Fallbacks hvis overskrifterne mangler helt specifikke ord
+            if not col_konsulent: col_konsulent = df_indlæst.columns[0]
+            if not col_navn and len(df_indlæst.columns) > 1: col_navn = df_indlæst.columns[1]
+            if not col_by and len(df_indlæst.columns) > 2: col_by = df_indlæst.columns[2]
             
             if col_navn and col_by and col_postnr:
                 unikke_kons_navne = sorted(df_indlæst[col_konsulent].dropna().unique())
                 
                 st.cache_data.clear()
-                
                 st.session_state['konsulenter'] = {i+1: {"navn": str(n).strip()} for i, n in enumerate(unikke_kons_navne)}
                 kons_navn_til_id = {str(n).strip(): i+1 for i, n in enumerate(unikke_kons_navne)}
                 st.session_state['kunder'] = []
                 
                 for idx, række in df_indlæst.iterrows():
-                    v_navn = række[col_navn]; v_by = række[col_by]; v_pnr = række[col_postnr]; v_kons = str(række[col_konsulent]).strip()
+                    v_navn = række[col_navn]
+                    v_by = række[col_by]
+                    v_pnr = række[col_postnr]
+                    v_kons = str(række[col_konsulent]).strip()
+                    
                     if pd.isna(v_navn) or pd.isna(v_by) or pd.isna(v_pnr):
                         continue
                         
                     if v_kons not in kons_navn_til_id: 
                         continue
                     
+                    # Dynamisk Parsing af Frekvens (Håndterer både tal, tekst og formler fra Excel)
                     freq = 1.0  
                     if col_frek and not pd.isna(række[col_frek]):
                         rå_værdi = str(række[col_frek]).strip().lower().replace(',', '.')
@@ -298,11 +311,10 @@ if st.session_state['bruger_rolle'] == "admin":
                         try:
                             freq = float(rå_værdi)
                         except ValueError:
-                            if "1/1" in rå_værdi or "ugentlig" in rå_værdi or "fast" in rå_værdi:
-                                freq = 1.0
-                            elif "0.5" in rå_værdi or "1/2" in rå_værdi or "hver 2" in rå_værdi:
+                            # Tekstbaserede regler hvis værdien er formateret som tekst
+                            if "0.5" in rå_værdi or "1/2" in rå_værdi or "2" in rå_værdi:
                                 freq = 0.5
-                            elif "0.25" in rå_værdi or "1/4" in rå_værdi or "hver 4" in rå_værdi:
+                            elif "0.25" in rå_værdi or "1/4" in rå_værdi or "4" in rå_værdi:
                                 freq = 0.25
                             elif "0.12" in rå_værdi or "1/8" in rå_værdi:
                                 freq = 0.12
@@ -332,9 +344,10 @@ if st.session_state['bruger_rolle'] == "admin":
                     st.session_state['aktivt_konsulent_id'] = list(st.session_state['konsulenter'].keys())[0]
 
                 gem_data_til_disken()
-                st.sidebar.success("Database opdateret!")
+                st.sidebar.success(f"Database opdateret! Indlæste {len(st.session_state['kunder'])} kunder.")
                 st.rerun()
-        except Exception as e: st.sidebar.error(f"Fejl under indlæsning: {e}")
+        except Exception as e: 
+            st.sidebar.error(f"Fejl under indlæsning: {e}")
 
     st.sidebar.markdown("---")
     st.sidebar.header("🔑 Admin: Rediger Koder")
@@ -442,7 +455,7 @@ else:
     for i, dag in enumerate(ALLE_DAGE_GLOBAL):
         with visnings_slots[i]:
             if dag not in valgte_dage:
-                st.markdown(f"### 🛑 {dag[:3]}.")
+                st.markdown(f"### 🛑 {grid[:3]}.")
                 st.caption("Lukket")
             else:
                 dag_aftaler = sorted([a for a in aktuelle_aftaler if a["dag"] == dag], key=lambda x: str(x["postnr"]))
@@ -493,7 +506,14 @@ else:
                             st.cache_data.clear()
                             st.rerun()
 
-# --- NULSTIL KNAP (RETTET PARAMETER) ---
+    # --- DIAGNOSTISK TRACKER (Kun synlig for Admin) ---
+    if st.session_state['bruger_rolle'] == "admin" and st.session_state['kunder']:
+        st.markdown("---")
+        st.subheader("🔍 Diagnostisk Værktøj: Indlæste Frekvenser fra Databasen")
+        df_diagnose = pd.DataFrame(st.session_state['kunder'])
+        st.dataframe(df_diagnose[["navn", "by", "postnr", "frekvens", "besoeg_pr_uge"]].head(25), use_container_width=True)
+
+# --- NULSTIL KNAP ---
 if st.session_state['bruger_rolle'] == "admin":
     st.sidebar.markdown("<br><br><br><hr>", unsafe_allow_html=True)
     if st.sidebar.button("⚠️ NULSTIL AL DATA PÅ SERVEREN"):
