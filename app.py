@@ -172,17 +172,16 @@ def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, v
                             })
                             ugens_planlagte_kunde_ids.add(f"{kunde['id']}-b{b_idx}")
 
-            # --- 2. AUTOMATISK MATEMATISK FORDELING PÅ FREKVENS ---
+            # --- 2. AUTOMATISK MATEMATISK FORDELING ---
             for kunde in konsulent_kunder:
                 try: frekvens = float(kunde["frekvens"])
                 except: frekvens = 1.0
-                
                 try: besøg_pr_uge = int(kunde.get("besoeg_pr_uge", 1))
                 except: besøg_pr_uge = 1
                 
-                skal_besoeges_i_denne_uge = False  # FAST FEJL: Mellemrum fjernet her!
-                try: kunde_offset = int(kunde["id"])
-                except: kunde_offset = 0
+                # Her var fejlen i din kode - sørg for korrekt indrykning
+                skal_besoeges_i_denne_uge = False
+                kunde_offset = int(kunde.get("id", 0))
                 
                 if frekvens >= 1.0:
                     skal_besoeges_i_denne_uge = True
@@ -198,34 +197,26 @@ def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, v
                 if skal_besoeges_i_denne_uge:
                     for b_idx in range(besøg_pr_uge):
                         slot_id = f"{kunde['id']}-b{b_idx}"
-                        
-                        if slot_id in ugens_planlagte_kunde_ids:
-                            continue
+                        if slot_id in ugens_planlagte_kunde_ids: continue
                         
                         ledige_dage = sorted(konsulent_arbejdsdage, key=lambda d: dag_taeller[d])
-                        
-                        alle_planlagte_dage_for_kunde = [a["dag"] for a in beregnede_aftaler if a["kunde_id"] == kunde["id"] and a["uge_id"] == uge_id]
-                        if len(alle_planlagte_dage_for_kunde) > 0 and len(ledige_dage) > len(alle_planlagte_dage_for_kunde):
-                            ledige_dage = sorted(ledige_dage, key=lambda d: (d in alle_planlagte_dage_for_kunde, dag_taeller[d]))
-                        
                         placeret = False
                         for dag in ledige_dage:
                             if dag_taeller[dag] < valgt_loft:
                                 dag_taeller[dag] += 1
                                 beregnede_aftaler.append({
-                                    "id": f"{kunde['id']}-{uge_id}-b{b_idx}", "kunde_id": kunde["id"], "kundenavn": kunde["navn"],
-                                    "by": kunde["by"], "postnr": kunde["postnr"], "konsulent_id": k_id,
-                                    "uge_id": uge_id, "dag": dag
+                                    "id": f"{kunde['id']}-{uge_id}-b{b_idx}", "kunde_id": kunde["id"], 
+                                    "kundenavn": kunde["navn"], "by": kunde["by"], "postnr": kunde["postnr"], 
+                                    "konsulent_id": k_id, "uge_id": uge_id, "dag": dag
                                 })
                                 ugens_planlagte_kunde_ids.add(slot_id)
                                 placeret = True
                                 break
-                        
                         if not placeret:
                             beregnede_aftaler.append({
-                                "id": f"{kunde['id']}-{uge_id}-b{b_idx}", "kunde_id": kunde["id"], "kundenavn": kunde["navn"],
-                                "by": kunde["by"], "postnr": kunde["postnr"], "konsulent_id": k_id,
-                                "uge_id": uge_id, "dag": "Ikke plads"
+                                "id": f"{kunde['id']}-{uge_id}-b{b_idx}", "kunde_id": kunde["id"], 
+                                "kundenavn": kunde["navn"], "by": kunde["by"], "postnr": kunde["postnr"], 
+                                "konsulent_id": k_id, "uge_id": uge_id, "dag": "Ikke plads"
                             })
                             ugens_planlagte_kunde_ids.add(slot_id)
                                     
