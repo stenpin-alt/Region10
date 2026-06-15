@@ -10,8 +10,8 @@ st.set_page_config(
 )
 
 # Standard for billedbredde (Rettet deprecation-fejl til det nye 2026-format)
-st.sidebar.image("logo.png", width="use_container_width")
-    
+st.sidebar.image("logo.png", use_container_width=True) 
+
 # CSS-optimering med lodrette skillelinjer mellem ugedagene
 st.markdown("""
     <style>
