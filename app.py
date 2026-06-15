@@ -212,9 +212,9 @@ def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, v
                         ledige_dage = sorted(konsulent_arbejdsdage, key=lambda d: dag_taeller[d])
                         
                         # Undgå så vidt muligt at lægge to besøg til samme kunde på samme dag
-                        allerede_planlagte_dage_for_kunde = [a["dag"] for a in beregnede_aftaler if a["kunde_id"] == kunde["id"] and a["uge_id"] == uge_id]
-                        if len(allerede_planlagte_dage_for_kunde) > 0 and len(ledige_dage) > len(allerede_planlagte_dage_for_kunde):
-                            ledige_dage = sorted(ledige_dage, key=lambda d: (d in allerede_planlagte_dage_for_kunde, dag_taeller[d]))
+                        alle_planlagte_dage_for_kunde = [a["dag"] for a in beregnede_aftaler if a["kunde_id"] == kunde["id"] and a["uge_id"] == uge_id]
+                        if len(alle_planlagte_dage_for_kunde) > 0 and len(ledige_dage) > len(alle_planlagte_dage_for_kunde):
+                            ledige_dage = sorted(ledige_dage, key=lambda d: (d in alle_planlagte_dage_for_kunde, dag_taeller[d]))
                         
                         placeret = False
                         for dag in ledige_dage:
@@ -303,7 +303,8 @@ if st.session_state['bruger_rolle'] == "admin":
                         if "1/1" in rå_værdi or "ugentlig" in rå_værdi or "fast" in rå_værdi:
                             freq = 1.0
                         else:
-                            try: freq = float(rå_værdi)
+                            try: 
+                                freq = float(rå_værdi)
                             except ValueError:
                                 if "0.5" in rå_værdi or "1/2" in rå_værdi: freq = 0.5
                                 elif "0.25" in rå_værdi or "1/4" in rå_værdi: freq = 0.25
@@ -494,7 +495,6 @@ else:
 # --- NULSTIL KNAP ---
 if st.session_state['bruger_rolle'] == "admin":
     st.sidebar.markdown("<br><br><br><hr>", unsafe_allow_html=True)
-    # Rettet deprecation-fejl til det nye 2026-format
     if st.sidebar.button("⚠️ NULSTIL AL DATA PÅ SERVEREN", use_container_width=True):
         for f in [FIL_KUNDER, FIL_KONSULENTER, FIL_FLYTNINGER]:
             if os.path.exists(f): os.remove(f)
