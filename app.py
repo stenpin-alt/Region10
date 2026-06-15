@@ -296,22 +296,33 @@ if st.session_state['bruger_rolle'] == "admin":
                     if pd.isna(v_navn) or pd.isna(v_by) or pd.isna(v_pnr):
                         continue
                         
-                    # Rettet: Tjekker nu om konsulenten findes i vores dictionary
                     if v_kons not in kons_navn_til_id: 
                         continue
                     
+                    # --- OPTIMERET OG ROBUST HÅNDTERING AF FREKVENS ---
                     freq = 1.0  
                     if col_frek and not pd.isna(række[col_frek]):
                         rå_værdi = str(række[col_frek]).strip().lower().replace(',', '.')
-                        if "1/1" in rå_værdi or "ugentlig" in rå_værdi or "fast" in rå_værdi:
-                            freq = 1.0
-                        else:
-                            try: 
-                                freq = float(rå_værdi)
-                            except ValueError:
-                                if "0.5" in rå_værdi or "1/2" in rå_værdi: freq = 0.5
-                                elif "0.25" in rå_værdi or "1/4" in rå_værdi: freq = 0.25
-                                else: freq = 1.0
+                        
+                        # Forsøg først direkte konvertering til float hvis det allerede er et rent tal
+                        try:
+                            freq = float(rå_værdi)
+                        except ValueError:
+                            # Hvis det indeholder tekstblandinger
+                            if "1/1" in rå_værdi or "ugentlig" in rå_værdi or "fast" in rå_værdi:
+                                freq = 1.0
+                            elif "0.5" in rå_værdi or "1/2" in rå_værdi or "hver 2" in rå_værdi:
+                                freq = 0.5
+                            elif "0.25" in rå_værdi or "1/4" in rå_værdi or "hver 4" in rå_værdi:
+                                freq = 0.25
+                            elif "0.12" in rå_værdi or "1/8" in rå_værdi:
+                                freq = 0.12
+                            elif "0.15" in rå_værdi:
+                                freq = 0.15
+                            elif "0.30" in rå_værdi:
+                                freq = 0.30
+                            else:
+                                freq = 1.0
                     
                     # Indlæs besøg pr uge (Standardiseret til 1, hvis der mangler data)
                     b_pr_uge = 1
@@ -495,7 +506,7 @@ else:
                             st.cache_data.clear()
                             st.rerun()
 
-# --- NULSTIL KNAP (Rettet use_container_width her, så fejlen forsvinder permanent) ---
+# --- NULSTIL KNAP ---
 if st.session_state['bruger_rolle'] == "admin":
     st.sidebar.markdown("<br><br><br><hr>", unsafe_allow_html=True)
     if st.sidebar.button("⚠️ NULSTIL AL DATA PÅ SERVEREN", use_container_width=True):
