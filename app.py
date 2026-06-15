@@ -180,7 +180,7 @@ def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, v
                 try: besøg_pr_uge = int(kunde.get("besoeg_pr_uge", 1))
                 except: besøg_pr_uge = 1
                 
-                skal_besoeges_i_denne_uge = False
+                skal_besoeges_ i_denne_uge = False
                 try: kunde_offset = int(kunde["id"])
                 except: kunde_offset = 0
                 
@@ -257,11 +257,19 @@ if st.session_state['bruger_rolle'] == "admin":
     uploaded_file = st.sidebar.file_uploader("Upload kundeliste", type=["xlsx", "xls"])
     if uploaded_file is not None:
         try:
-            # Læs råt uden datatypetvingning først for maksimal fleksibilitet
-            df_indlæst = pd.read_excel(uploaded_file, skiprows=2)
+            # Vi fjerner skiprows for at sikre, at vi fanger rækkerne korrekt uanset overskriftsplacering
+            df_indlæst = pd.read_excel(uploaded_file)
             df_indlæst.columns = df_indlæst.columns.astype(str).str.strip()
             
-            # Smart kolonne-detektering uanset stavefejl eller ekstra mellemrum
+            # Find ud af om overskrifterne lå gemt længere nede
+            if "Navn" not in df_indlæst.columns and "Konsulent" not in df_indlæst.columns:
+                for i in range(min(5, len(df_indlæst))):
+                    række_str = df_indlæst.iloc[i].astype(str).tolist()
+                    if any("konsulent" in r.lower() or "navn" in r.lower() for r in række_str):
+                        df_indlæst = pd.read_excel(uploaded_file, skiprows=i+1)
+                        df_indlæst.columns = df_indlæst.columns.astype(str).str.strip()
+                        break
+
             col_konsulent = None
             col_navn = None
             col_by = None
@@ -274,14 +282,14 @@ if st.session_state['bruger_rolle'] == "admin":
                 if "konsulent" in c_low: col_konsulent = c
                 elif "navn" in c_low: col_navn = c
                 elif "by" in c_low and "udby" not in c_low: col_by = c
-                elif "frek" in c_low or "besøgs" in c_low: col_frek = c
-                elif "besøg pr" in c_low or "pr uge" in c_low: col_besoeg_pr_uge = c
-                elif "post" in c_low or "pnr" in c_low: col_postnr = c
+                elif "frekvens" in c_low or "besøgs frekvens" in c_low or "besøgsfrekvens" in c_low: col_frek = c
+                elif "besøg pr uge" in c_low or "besøg_pr_uge" in c_low: col_besoeg_pr_uge = c
+                elif "post" in c_low or "pnr" in c_low or "postnr" in c_low: col_postnr = c
             
-            # Fallbacks hvis overskrifterne mangler helt specifikke ord
+            # Globale fallbacks hvis alt andet fejler
             if not col_konsulent: col_konsulent = df_indlæst.columns[0]
-            if not col_navn and len(df_indlæst.columns) > 1: col_navn = df_indlæst.columns[1]
-            if not col_by and len(df_indlæst.columns) > 2: col_by = df_indlæst.columns[2]
+            if not col_navn: col_navn = df_indlæst.columns[1]
+            if not col_by: col_by = df_indlæst.columns[2]
             
             if col_navn and col_by and col_postnr:
                 unikke_kons_navne = sorted(df_indlæst[col_konsulent].dropna().unique())
@@ -303,32 +311,32 @@ if st.session_state['bruger_rolle'] == "admin":
                     if v_kons not in kons_navn_til_id: 
                         continue
                     
-                    # Dynamisk Parsing af Frekvens (Håndterer både tal, tekst og formler fra Excel)
+                    # Ultrahård parsing af frekvens - Tjekker direkte på rå-værdier
                     freq = 1.0  
                     if col_frek and not pd.isna(række[col_frek]):
                         rå_værdi = str(række[col_frek]).strip().lower().replace(',', '.')
-                        
-                        try:
-                            freq = float(rå_værdi)
-                        except ValueError:
-                            # Tekstbaserede regler hvis værdien er formateret som tekst
-                            if "0.5" in rå_værdi or "1/2" in rå_værdi or "2" in rå_værdi:
-                                freq = 0.5
-                            elif "0.25" in rå_værdi or "1/4" in rå_værdi or "4" in rå_værdi:
-                                freq = 0.25
-                            elif "0.12" in rå_værdi or "1/8" in rå_værdi:
-                                freq = 0.12
-                            elif "0.15" in rå_værdi:
-                                freq = 0.15
-                            elif "0.30" in rå_værdi:
-                                freq = 0.30
-                            else:
-                                freq = 1.0
+                        if "0.5" in rå_værdi or "0,5" in rå_værdi or "1/2" in rå_værdi:
+                            freq = 0.5
+                        elif "0.25" in rå_værdi or "0,25" in rå_værdi or "1/4" in rå_værdi:
+                            freq = 0.25
+                        elif "0.12" in rå_værdi or "1/8" in rå_værdi:
+                            freq = 0.12
+                        elif "0.15" in rå_værdi:
+                            freq = 0.15
+                        elif "0.30" in rå_værdi:
+                            freq = 0.30
+                        else:
+                            try: freq = float(rå_værdi)
+                            except: freq = 1.0
                     
+                    # Standardiser besøg pr uge til ALTID 1, medmindre arket specifikt dikterer andet
                     b_pr_uge = 1
                     if col_besoeg_pr_uge and not pd.isna(række[col_besoeg_pr_uge]):
-                        try: b_pr_uge = int(række[col_besoeg_pr_uge])
-                        except: b_pr_uge = 1
+                        try: 
+                            b_pr_uge = int(float(str(række[col_besoeg_pr_uge]).replace(',', '.')))
+                            if b_pr_uge < 1: b_pr_uge = 1
+                        except: 
+                            b_pr_uge = 1
                                     
                     st.session_state['kunder'].append({
                         "id": idx + 1000, 
@@ -455,7 +463,7 @@ else:
     for i, dag in enumerate(ALLE_DAGE_GLOBAL):
         with visnings_slots[i]:
             if dag not in valgte_dage:
-                st.markdown(f"### 🛑 {grid[:3]}.")
+                st.markdown(f"### 🛑 {dag[:3]}.")
                 st.caption("Lukket")
             else:
                 dag_aftaler = sorted([a for a in aktuelle_aftaler if a["dag"] == dag], key=lambda x: str(x["postnr"]))
