@@ -293,9 +293,12 @@ if st.session_state['bruger_rolle'] == "admin":
                 
                 for idx, række in df_indlæst.iterrows():
                     v_navn = række[col_navn]; v_by = række[col_by]; v_pnr = række[col_postnr]; v_kons = str(række[col_konsulent]).strip()
-                    if pd.isna(v_navn) or pd.isna(v_by) or pd.isna(v_pnr) or v_kons not in RedigerKoder:
-                        # Fallback hvis ID-match fejler
-                        if v_kons not in kons_navn_til_id: continue
+                    if pd.isna(v_navn) or pd.isna(v_by) or pd.isna(v_pnr):
+                        continue
+                        
+                    # Rettet: Tjekker nu om konsulenten findes i vores dictionary
+                    if v_kons not in kons_navn_til_id: 
+                        continue
                     
                     freq = 1.0  
                     if col_frek and not pd.isna(række[col_frek]):
