@@ -9,8 +9,8 @@ st.set_page_config(
     page_icon="logo.png"
 )
 
-# Standard for billedbredde
-st.sidebar.image("logo.png", width="stretch")
+# Standard for billedbredde (Rettet deprecation-fejl til det nye 2026-format)
+st.sidebar.image("logo.png", width="use_container_width")
     
 # CSS-optimering med lodrette skillelinjer mellem ugedagene
 st.markdown("""
@@ -128,7 +128,7 @@ def hent_zone_og_farve(pnr):
     elif 8000 <= pnr_int <= 8999: return "Østjylland", "🔴"
     return "Nordjylland", "⚫"
 
-# --- AVANCERET RUTEMOTOR BASERET PÅ FREKVENS & BESØG PR UGE ---
+# --- AVANCERET RUTEMOTOR BASERET PÅ MATEMATISK UGE-FREKVENS ---
 @st.cache_data
 def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, valgt_loft):
     beregnede_aftaler = []
@@ -149,18 +149,15 @@ def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, v
         if not konsulent_kunder:
             continue
             
-        # Den rullende pointer husker hvor i listen vi slap
-        kunde_index_pointer = 0
         samlet_antal_kunder = len(konsulent_kunder)
         
-        # Vi cykler kontinuerligt hen over ugerne (1-52)
+        # Vi cykler over alle 52 uger
         for uge_nummer in range(1, 53):
             uge_id = f"{aktuelt_aar}-Uge{uge_nummer:02d}"
             dag_taeller = {d: 0 for d in ALLE_DAGE_GLOBAL}
             ugens_planlagte_kunde_ids = set()
             
             # --- 1. MANUELLE FLYTNINGER HAR FØRSTERET ---
-            # Understøtter potentielt flere unikke besøgs-slots for samme kunde i samme uge ved hjælp af et besøgs-index i id'et
             for kunde in konsulent_kunder:
                 try: besøg_pr_uge = int(kunde.get("besoeg_pr_uge", 1))
                 except: besøg_pr_uge = 1
@@ -178,36 +175,43 @@ def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, v
                             })
                             ugens_planlagte_kunde_ids.add(f"{kunde['id']}-b{b_idx}")
 
-            # --- 2. AUTOMATISK FORDELING BASERET PÅ BESØGS-LOGIK ---
-            forsøg_tæller = 0
-            while any(dag_taeller[d] < valgt_loft for d in konsulent_arbejdsdage) and forsøg_tæller < samlet_antal_kunder:
-                kunde = konsulent_kunder[kunde_index_pointer]
-                forsøg_tæller += 1
-                
+            # --- 2. AUTOMATISK MATEMATISK FORDELING PÅ FREKVENS ---
+            # Vi bruger et unikt offset per kunde, så alle 0.5- eller 0.25-kunder ikke lander i præcis samme uge
+            for kunde in konsulent_kunder:
                 try: frekvens = float(kunde["frekvens"])
                 except: frekvens = 1.0
                 
                 try: besøg_pr_uge = int(kunde.get("besoeg_pr_uge", 1))
                 except: besøg_pr_uge = 1
                 
-                # Respekter uge-frekvensintervaller
-                skal_besøges_i_denne_uge = True
-                if frekvens == 0.5 and (uge_nummer % 2 != (int(kunde["id"]) % 2)): skal_besøges_i_denne_uge = False
-                if frekvens == 0.25 and (uge_nummer % 4 != (int(kunde["id"]) % 4)): skal_besøges_i_denne_uge = False
+                # Matematisk uge-validering
+                skal_besøges_i_denne_uge = False
+                kunde_offset = int(kunde["id"])
                 
+                if frekvens >= 1.0:
+                    skal_besøges_i_denne_uge = True  # Besøg hver uge
+                elif frekvens == 0.50:
+                    if uge_nummer % 2 == (kunde_offset % 2): skal_besøges_i_denne_uge = True  # Hver 2. uge
+                elif frekvens == 0.25:
+                    if uge_nummer % 4 == (kunde_offset % 4): skal_besøges_i_denne_uge = True  # Hver 4. uge
+                elif frekvens in [0.12, 0.15, 0.30]:
+                    if uge_nummer % 6 == (kunde_offset % 6): skal_besøges_i_denne_uge = True  # Hver 6. uge
+                else:
+                    # Fallback hvis frekvensen er skæv
+                    if uge_nummer % 2 == 0: skal_besøges_i_denne_uge = True
+
                 if skal_besøges_i_denne_uge:
-                    # En kunde kan have behov for flere besøg i den samme uge
                     for b_idx in range(besøg_pr_uge):
                         slot_id = f"{kunde['id']}-b{b_idx}"
                         
-                        # Hvis dette specifikke besøg allerede er manuelt flyttet, springer vi det over her
-                        if slot_id in [f"{kunde['id']}-b{b_idx}" for slot_id in ugens_planlagte_kunde_ids]:
+                        # Hvis besøget allerede er håndteret manuelt, spring over
+                        if slot_id in ugens_planlagte_kunde_ids:
                             continue
                         
-                        # Find ugens ledige dage og sorter efter mindst belastning
+                        # Find den mest ledige arbejdsdag for konsulenten
                         ledige_dage = sorted(konsulent_arbejdsdage, key=lambda d: dag_taeller[d])
                         
-                        # Hvis det er besøg nr. 2 eller flere i samme uge, forsøger vi at undgå at lægge det på samme dag
+                        # Undgå så vidt muligt at lægge to besøg til samme kunde på samme dag
                         allerede_planlagte_dage_for_kunde = [a["dag"] for a in beregnede_aftaler if a["kunde_id"] == kunde["id"] and a["uge_id"] == uge_id]
                         if len(allerede_planlagte_dage_for_kunde) > 0 and len(ledige_dage) > len(allerede_planlagte_dage_for_kunde):
                             ledige_dage = sorted(ledige_dage, key=lambda d: (d in allerede_planlagte_dage_for_kunde, dag_taeller[d]))
@@ -225,7 +229,7 @@ def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, v
                                 placeret = True
                                 break
                         
-                        # Hvis der absolut ikke er plads på nogen arbejdsdage til dette besøg, sendes det til overskudskurven
+                        # Hvis overskredet, rykkes kunden til overskudskurven
                         if not placeret:
                             beregnede_aftaler.append({
                                 "id": f"{kunde['id']}-{uge_id}-b{b_idx}", "kunde_id": kunde["id"], "kundenavn": kunde["navn"],
@@ -233,10 +237,7 @@ def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, v
                                 "uge_id": uge_id, "dag": "Ikke plads"
                             })
                             ugens_planlagte_kunde_ids.add(slot_id)
-                            
-                # Pointeren flytter sig permanent til næste kunde i det samlede kartotek
-                kunde_index_pointer = (kunde_index_pointer + 1) % samlet_antal_kunder
-                                
+                                    
     return beregnede_aftaler
 
 # --- LOGIN SKÆRM ---
@@ -471,7 +472,7 @@ else:
     ikke_plads_aftaler = [a for a in aktuelle_aftaler if a["dag"] == "Ikke plads"]
     if ikke_plads_aftaler:
         st.markdown("<br><br>", unsafe_allow_html=True)
-        st.warning(f"⚠️ **Overskydende butikker i {st.session_state['valgt_uge_state']} (Bliver automatisk skubbet til næste uger for at holde maks-loftet på {st.session_state['maks_kunder_pr_dag']}):**")
+        st.warning(f"⚠️ **Overskydende butikker i {st.session_state['valgt_uge_state']} (Bliver automatisk skubbet tovejs for at holde maks-loftet på {st.session_state['maks_kunder_pr_dag']}):**")
         
         il_cols = st.columns(4)
         for idx, _aftale in enumerate(ikke_plads_aftaler):
@@ -493,7 +494,8 @@ else:
 # --- NULSTIL KNAP ---
 if st.session_state['bruger_rolle'] == "admin":
     st.sidebar.markdown("<br><br><br><hr>", unsafe_allow_html=True)
-    if st.sidebar.button("⚠️ NULSTIL AL DATA PÅ SERVEREN", use_container_width=True):
+    # Rettet deprecation-fejl til det nye 2026-format
+    if st.sidebar.button("⚠️ NULSTIL AL DATA PÅ SERVEREN", width="use_container_width"):
         for f in [FIL_KUNDER, FIL_KONSULENTER, FIL_FLYTNINGER]:
             if os.path.exists(f): os.remove(f)
         st.cache_data.clear()
