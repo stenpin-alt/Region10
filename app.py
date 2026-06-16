@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 import os
-import re
 
 st.set_page_config(
     page_title="Convenience Ruteplanlægger Pro", 
@@ -10,9 +9,9 @@ st.set_page_config(
     page_icon="logo.png"
 )
 
-# Standard for billedbredde - rettet til korrekt Streamlit parameter
-st.sidebar.image("logo.png", use_container_width=True) 
-
+# Standard for billedbredde (Rettet deprecation-fejl til det nye 2026-format)
+st.sidebar.image("logo.png", width="use_container_width")
+    
 # CSS-optimering med lodrette skillelinjer mellem ugedagene
 st.markdown("""
     <style>
@@ -140,6 +139,7 @@ def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, v
         if not konsulent_arbejdsdage:
             konsulent_arbejdsdage = ALLE_DAGE_GLOBAL
             
+        # Sorter geografisk efter postnummer så nære områder følges ad
         konsulent_kunder = [k for k in kunder if int(k["konsulent_id"]) == int(k_id)]
         try:
             konsulent_kunder.sort(key=lambda x: int(''.join(filter(str.isdigit, str(x["postnr"])))))
@@ -149,12 +149,15 @@ def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, v
         if not konsulent_kunder:
             continue
             
+        samlet_antal_kunder = len(konsulent_kunder)
+        
+        # Vi cykler over alle 52 uger
         for uge_nummer in range(1, 53):
             uge_id = f"{aktuelt_aar}-Uge{uge_nummer:02d}"
             dag_taeller = {d: 0 for d in ALLE_DAGE_GLOBAL}
             ugens_planlagte_kunde_ids = set()
             
-            # --- 1. MANUELLE FLYTNINGER ---
+            # --- 1. MANUELLE FLYTNINGER HAR FØRSTERET ---
             for kunde in konsulent_kunder:
                 try: besøg_pr_uge = int(kunde.get("besoeg_pr_uge", 1))
                 except: besøg_pr_uge = 1
@@ -172,51 +175,66 @@ def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, v
                             })
                             ugens_planlagte_kunde_ids.add(f"{kunde['id']}-b{b_idx}")
 
-            # --- 2. AUTOMATISK MATEMATISK FORDELING ---
+            # --- 2. AUTOMATISK MATEMATISK FORDELING PÅ FREKVENS ---
+            # Vi bruger et unikt offset per kunde, så alle 0.5- eller 0.25-kunder ikke lander i præcis samme uge
             for kunde in konsulent_kunder:
                 try: frekvens = float(kunde["frekvens"])
                 except: frekvens = 1.0
+                
                 try: besøg_pr_uge = int(kunde.get("besoeg_pr_uge", 1))
                 except: besøg_pr_uge = 1
                 
-                # Her var fejlen i din kode - sørg for korrekt indrykning
-                skal_besoeges_i_denne_uge = False
-                kunde_offset = int(kunde.get("id", 0))
+                # Matematisk uge-validering
+                skal_besøges_i_denne_uge = False
+                kunde_offset = int(kunde["id"])
                 
                 if frekvens >= 1.0:
-                    skal_besoeges_i_denne_uge = True
+                    skal_besøges_i_denne_uge = True  # Besøg hver uge
                 elif frekvens == 0.50:
-                    if uge_nummer % 2 == (kunde_offset % 2): skal_besoeges_i_denne_uge = True
+                    if uge_nummer % 2 == (kunde_offset % 2): skal_besøges_i_denne_uge = True  # Hver 2. uge
                 elif frekvens == 0.25:
-                    if uge_nummer % 4 == (kunde_offset % 4): skal_besoeges_i_denne_uge = True
+                    if uge_nummer % 4 == (kunde_offset % 4): skal_besøges_i_denne_uge = True  # Hver 4. uge
                 elif frekvens in [0.12, 0.15, 0.30]:
-                    if uge_nummer % 6 == (kunde_offset % 6): skal_besoeges_i_denne_uge = True
+                    if uge_nummer % 6 == (kunde_offset % 6): skal_besøges_i_denne_uge = True  # Hver 6. uge
                 else:
-                    if uge_nummer % 2 == 0: skal_besoeges_i_denne_uge = True
+                    # Fallback hvis frekvensen er skæv
+                    if uge_nummer % 2 == 0: skal_besøges_i_denne_uge = True
 
-                if skal_besoeges_i_denne_uge:
+                if skal_besøges_i_denne_uge:
                     for b_idx in range(besøg_pr_uge):
                         slot_id = f"{kunde['id']}-b{b_idx}"
-                        if slot_id in ugens_planlagte_kunde_ids: continue
                         
+                        # Hvis besøget allerede er håndteret manuelt, spring over
+                        if slot_id in ugens_planlagte_kunde_ids:
+                            continue
+                        
+                        # Find den mest ledige arbejdsdag for konsulenten
                         ledige_dage = sorted(konsulent_arbejdsdage, key=lambda d: dag_taeller[d])
+                        
+                        # Undgå så vidt muligt at lægge to besøg til samme kunde på samme dag
+                        allerede_planlagte_dage_for_kunde = [a["dag"] for a in beregnede_aftaler if a["kunde_id"] == kunde["id"] and a["uge_id"] == uge_id]
+                        if len(allerede_planlagte_dage_for_kunde) > 0 and len(ledige_dage) > len(allerede_planlagte_dage_for_kunde):
+                            ledige_dage = sorted(ledige_dage, key=lambda d: (d in allerede_planlagte_dage_for_kunde, dag_taeller[d]))
+                        
                         placeret = False
                         for dag in ledige_dage:
                             if dag_taeller[dag] < valgt_loft:
                                 dag_taeller[dag] += 1
                                 beregnede_aftaler.append({
-                                    "id": f"{kunde['id']}-{uge_id}-b{b_idx}", "kunde_id": kunde["id"], 
-                                    "kundenavn": kunde["navn"], "by": kunde["by"], "postnr": kunde["postnr"], 
-                                    "konsulent_id": k_id, "uge_id": uge_id, "dag": dag
+                                    "id": f"{kunde['id']}-{uge_id}-b{b_idx}", "kunde_id": kunde["id"], "kundenavn": kunde["navn"],
+                                    "by": kunde["by"], "postnr": kunde["postnr"], "konsulent_id": k_id,
+                                    "uge_id": uge_id, "dag": dag
                                 })
                                 ugens_planlagte_kunde_ids.add(slot_id)
                                 placeret = True
                                 break
+                        
+                        # Hvis overskredet, rykkes kunden til overskudskurven
                         if not placeret:
                             beregnede_aftaler.append({
-                                "id": f"{kunde['id']}-{uge_id}-b{b_idx}", "kunde_id": kunde["id"], 
-                                "kundenavn": kunde["navn"], "by": kunde["by"], "postnr": kunde["postnr"], 
-                                "konsulent_id": k_id, "uge_id": uge_id, "dag": "Ikke plads"
+                                "id": f"{kunde['id']}-{uge_id}-b{b_idx}", "kunde_id": kunde["id"], "kundenavn": kunde["navn"],
+                                "by": kunde["by"], "postnr": kunde["postnr"], "konsulent_id": k_id,
+                                "uge_id": uge_id, "dag": "Ikke plads"
                             })
                             ugens_planlagte_kunde_ids.add(slot_id)
                                     
@@ -242,87 +260,60 @@ if st.sidebar.button("Log ud 🔓"):
     st.session_state['aktivt_konsulent_id'] = None
     st.rerun()
 
-# --- EXCEL UPLOAD ---
+# --- EXCEL UPLOAD MED AUTOMATISK RE-RUN ---
 if st.session_state['bruger_rolle'] == "admin":
     st.sidebar.header("📂 Admin: Excel Upload")
     uploaded_file = st.sidebar.file_uploader("Upload kundeliste", type=["xlsx", "xls"])
     if uploaded_file is not None:
         try:
-            df_indlæst = pd.read_excel(uploaded_file)
+            df_indlæst = pd.read_excel(uploaded_file, skiprows=2)
             df_indlæst.columns = df_indlæst.columns.astype(str).str.strip()
+            col_konsulent = "Konsulent" if "Konsulent" in df_indlæst.columns else df_indlæst.columns[0]
+            col_navn = "Navn" if "Navn" in df_indlæst.columns else None
+            col_by = "By" if "By" in df_indlæst.columns else None
+            col_frek = "Besøgs frekvens" if "Besøgs frekvens" in df_indlæst.columns else None
+            col_besoeg_pr_uge = "besøg pr uge" if "besøg pr uge" in df_indlæst.columns else None
+            col_postnr = "Postnr" if "Postnr" in df_indlæst.columns else None
             
-            if "Navn" not in df_indlæst.columns and "Konsulent" not in df_indlæst.columns:
-                for i in range(min(5, len(df_indlæst))):
-                    række_str = df_indlæst.iloc[i].astype(str).tolist()
-                    if any("konsulent" in r.lower() or "navn" in r.lower() for r in række_str):
-                        df_indlæst = pd.read_excel(uploaded_file, skiprows=i+1)
-                        df_indlæst.columns = df_indlæst.columns.astype(str).str.strip()
-                        break
-
-            col_konsulent = None
-            col_navn = None
-            col_by = None
-            col_frek = None
-            col_besoeg_pr_uge = None
-            col_postnr = None
+            if not col_postnr:
+                for c in df_indlæst.columns:
+                    if "post" in c.lower() or "pnr" in c.lower(): col_postnr = c; break
             
-            for c in df_indlæst.columns:
-                c_low = c.lower()
-                if "konsulent" in c_low: col_konsulent = c
-                elif "navn" in c_low: col_navn = c
-                elif "by" in c_low and "udby" not in c_low: col_by = c
-                elif "frekvens" in c_low or "besøgs frekvens" in c_low or "besøgsfrekvens" in c_low: col_frek = c
-                elif "besøg pr uge" in c_low or "besøg_pr_uge" in c_low: col_besoeg_pr_uge = c
-                elif "post" in c_low or "pnr" in c_low or "postnr" in c_low: col_postnr = c
-            
-            if not col_konsulent: col_konsulent = df_indlæst.columns[0]
-            if not col_navn: col_navn = df_indlæst.columns[1]
-            if not col_by: col_by = df_indlæst.columns[2]
+            if not col_besoeg_pr_uge:
+                for c in df_indlæst.columns:
+                    if "besøg pr" in c.lower() or "pr uge" in c.lower(): col_besoeg_pr_uge = c; break
             
             if col_navn and col_by and col_postnr:
                 unikke_kons_navne = sorted(df_indlæst[col_konsulent].dropna().unique())
                 
+                # Nulstil gammel cache med det samme inden indlæsning
                 st.cache_data.clear()
+                
                 st.session_state['konsulenter'] = {i+1: {"navn": str(n).strip()} for i, n in enumerate(unikke_kons_navne)}
                 kons_navn_til_id = {str(n).strip(): i+1 for i, n in enumerate(unikke_kons_navne)}
                 st.session_state['kunder'] = []
                 
                 for idx, række in df_indlæst.iterrows():
-                    v_navn = række[col_navn]
-                    v_by = række[col_by]
-                    v_pnr = række[col_postnr]
-                    v_kons = str(række[col_konsulent]).strip()
-                    
-                    if pd.isna(v_navn) or pd.isna(v_by) or pd.isna(v_pnr):
-                        continue
-                        
-                    if v_kons not in kons_navn_til_id: 
-                        continue
+                    v_navn = række[col_navn]; v_by = række[col_by]; v_pnr = række[col_postnr]; v_kons = str(række[col_konsulent]).strip()
+                    if pd.isna(v_navn) or pd.isna(v_by) or pd.isna(v_pnr) or v_kons not in kons_navn_til_id: continue
                     
                     freq = 1.0  
                     if col_frek and not pd.isna(række[col_frek]):
                         rå_værdi = str(række[col_frek]).strip().lower().replace(',', '.')
-                        if "0.5" in rå_værdi or "0,5" in rå_værdi or "1/2" in rå_værdi:
-                            freq = 0.5
-                        elif "0.25" in rå_værdi or "0,25" in rå_værdi or "1/4" in rå_værdi:
-                            freq = 0.25
-                        elif "0.12" in rå_værdi or "1/8" in rå_værdi:
-                            freq = 0.12
-                        elif "0.15" in rå_værdi:
-                            freq = 0.15
-                        elif "0.30" in rå_værdi:
-                            freq = 0.30
+                        if "1/1" in rå_værdi or "ugentlig" in rå_værdi or "fast" in rå_værdi:
+                            freq = 1.0
                         else:
                             try: freq = float(rå_værdi)
-                            except: freq = 1.0
+                            except ValueError:
+                                if "0.5" in rå_værdi or "1/2" in rå_værdi: freq = 0.5
+                                elif "0.25" in rå_værdi or "1/4" in rå_værdi: freq = 0.25
+                                else: freq = 1.0
                     
+                    # Indlæs besøg pr uge (Standardiseret til 1, hvis der mangler data)
                     b_pr_uge = 1
                     if col_besoeg_pr_uge and not pd.isna(række[col_besoeg_pr_uge]):
-                        try: 
-                            b_pr_uge = int(float(str(række[col_besoeg_pr_uge]).replace(',', '.')))
-                            if b_pr_uge < 1: b_pr_uge = 1
-                        except: 
-                            b_pr_uge = 1
+                        try: b_pr_uge = int(række[col_besoeg_pr_uge])
+                        except: b_pr_uge = 1
                                     
                     st.session_state['kunder'].append({
                         "id": idx + 1000, 
@@ -338,10 +329,9 @@ if st.session_state['bruger_rolle'] == "admin":
                     st.session_state['aktivt_konsulent_id'] = list(st.session_state['konsulenter'].keys())[0]
 
                 gem_data_til_disken()
-                st.sidebar.success(f"Database opdateret! Indlæste {len(st.session_state['kunder'])} kunder.")
+                st.sidebar.success("Database opdateret!")
                 st.rerun()
-        except Exception as e: 
-            st.sidebar.error(f"Fejl under indlæsning: {e}")
+        except Exception as e: st.sidebar.error(f"Fejl under indlæsning: {e}")
 
     st.sidebar.markdown("---")
     st.sidebar.header("🔑 Admin: Rediger Koder")
@@ -478,6 +468,7 @@ else:
                                     st.cache_data.clear()
                                     st.rerun()
 
+    # --- KUNDER DER IKKE KAN VÆRE DER PGA LOFT ---
     ikke_plads_aftaler = [a for a in aktuelle_aftaler if a["dag"] == "Ikke plads"]
     if ikke_plads_aftaler:
         st.markdown("<br><br>", unsafe_allow_html=True)
@@ -500,18 +491,11 @@ else:
                             st.cache_data.clear()
                             st.rerun()
 
-    # --- DIAGNOSTISK TRACKER (Kun synlig for Admin) ---
-    if st.session_state['bruger_rolle'] == "admin" and st.session_state['kunder']:
-        st.markdown("---")
-        st.subheader("🔍 Diagnostisk Værktøj: Indlæste Frekvenser fra Databasen")
-        df_diagnose = pd.DataFrame(st.session_state['kunder'])
-        st.dataframe(df_diagnose[["navn", "by", "postnr", "frekvens", "besoeg_pr_uge"]].head(25), use_container_width=True)
-
 # --- NULSTIL KNAP ---
 if st.session_state['bruger_rolle'] == "admin":
     st.sidebar.markdown("<br><br><br><hr>", unsafe_allow_html=True)
-    # FAST FEJL: Rettet parametre til den nyeste Streamlit-standard
-    if st.sidebar.button("⚠️ NULSTIL AL DATA PÅ SERVEREN", use_container_width=True):
+    # Rettet deprecation-fejl til det nye 2026-format
+    if st.sidebar.button("⚠️ NULSTIL AL DATA PÅ SERVEREN", width="use_container_width"):
         for f in [FIL_KUNDER, FIL_KONSULENTER, FIL_FLYTNINGER]:
             if os.path.exists(f): os.remove(f)
         st.cache_data.clear()
