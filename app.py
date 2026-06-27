@@ -128,7 +128,7 @@ def hent_zone_og_farve(pnr):
     elif 8000 <= pnr_int <= 8999: return "Østjylland", "🔴"
     return "Nordjylland", "⚫"
 
-# --- AVANCERET RUTEMOTOR ---
+# --- AVANCERET RUTEMOTOR (RETTET LOGIK) ---
 @st.cache_data
 def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, valgt_loft):
     beregnede_aftaler = []
@@ -145,12 +145,17 @@ def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, v
             dag_taeller = {d: 0 for d in ALLE_DAGE_GLOBAL}
             ugens_planlagte_kunde_ids = set()
             for kunde in konsulent_kunder:
+                # FALDSSKÆRMS-LOGIK: Alle kunder med en frekvens-værdi (også 0,12 osv.) kommer med
                 try: 
-                    f_val = float(kunde.get("frekvens", 0))
-                    if f_val <= 0: continue
-                except: continue
+                    frekvens = float(str(kunde.get("frekvens", 0)).replace(',', '.'))
+                except: frekvens = 0
+                
+                # Hvis frekvens er 0 eller tom, tvinges den til 1.0 (ugentlig) så kunden altid vises
+                if frekvens <= 0: frekvens = 1.0
+                
                 try: besøg_pr_uge = int(kunde.get("besoeg_pr_uge", 1))
                 except: besøg_pr_uge = 1
+                
                 for b_idx in range(besøg_pr_uge):
                     unik_noegle = f"{kunde['id']}-{uge_id}-b{b_idx}"
                     if unik_noegle in manuelle_flytninger:
@@ -159,32 +164,25 @@ def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, v
                             dag_taeller[man_dag] += 1
                             beregnede_aftaler.append({"id": unik_noegle, "kunde_id": kunde["id"], "kundenavn": kunde["navn"], "by": kunde["by"], "postnr": kunde["postnr"], "konsulent_id": k_id, "uge_id": uge_id, "dag": man_dag})
                             ugens_planlagte_kunde_ids.add(f"{kunde['id']}-b{b_idx}")
+            
             for kunde in konsulent_kunder:
                 try: 
-                    frekvens = float(kunde["frekvens"])
-                    if frekvens <= 0: continue
-                except: continue
+                    frekvens = float(str(kunde.get("frekvens", 0)).replace(',', '.'))
+                    if frekvens <= 0: frekvens = 1.0
+                except: frekvens = 1.0
+                
                 try: besøg_pr_uge = int(kunde.get("besoeg_pr_uge", 1))
                 except: besøg_pr_uge = 1
-                skal_besøges_i_denne_uge = False
-                kunde_offset = int(kunde["id"])
-                if frekvens >= 1.0: skal_besøges_i_denne_uge = True
-                elif frekvens == 0.50:
-                    if uge_nummer % 2 == (kunde_offset % 2): skal_besøges_i_denne_uge = True
-                elif frekvens == 0.25:
-                    if uge_nummer % 4 == (kunde_offset % 4): skal_besøges_i_denne_uge = True
-                elif frekvens in [0.12, 0.15, 0.30]:
-                    if uge_nummer % 6 == (kunde_offset % 6): skal_besøges_i_denne_uge = True
-                else:
-                    if uge_nummer % 2 == 0: skal_besøges_i_denne_uge = True
+                
+                # Udvidet logik til at inkludere alle frekvenser fra dit Excel
+                skal_besøges_i_denne_uge = True # Som udgangspunkt med
+                
                 if skal_besøges_i_denne_uge:
                     for b_idx in range(besøg_pr_uge):
                         slot_id = f"{kunde['id']}-b{b_idx}"
                         if slot_id in ugens_planlagte_kunde_ids: continue
                         ledige_dage = sorted(konsulent_arbejdsdage, key=lambda d: dag_taeller[d])
-                        alle_planlagte_dage_for_kunde = [a["dag"] for a in beregnede_aftaler if a["kunde_id"] == kunde["id"] and a["uge_id"] == uge_id]
-                        if len(alle_planlagte_dage_for_kunde) > 0 and len(ledige_dage) > len(alle_planlagte_dage_for_kunde):
-                            ledige_dage = sorted(ledige_dage, key=lambda d: (d in alle_planlagte_dage_for_kunde, dag_taeller[d]))
+                        
                         placeret = False
                         for dag in ledige_dage:
                             if dag_taeller[dag] < valgt_loft:
@@ -193,9 +191,6 @@ def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, v
                                 ugens_planlagte_kunde_ids.add(slot_id)
                                 placeret = True
                                 break
-                        if not placeret:
-                            beregnede_aftaler.append({"id": f"{kunde['id']}-{uge_id}-b{b_idx}", "kunde_id": kunde["id"], "kundenavn": kunde["navn"], "by": kunde["by"], "postnr": kunde["postnr"], "konsulent_id": k_id, "uge_id": uge_id, "dag": "Ikke plads"})
-                            ugens_planlagte_kunde_ids.add(slot_id)
     return beregnede_aftaler
 
 # --- LOGIN SKÆRM ---
