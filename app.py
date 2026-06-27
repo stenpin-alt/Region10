@@ -10,7 +10,8 @@ st.set_page_config(
 )
 
 # Standard for billedbredde
-st.sidebar.image("logo.png", use_container_width=True) 
+if os.path.exists("logo.png"):
+    st.sidebar.image("logo.png", use_container_width=True) 
 
 # CSS-optimering
 st.markdown("""
@@ -128,7 +129,7 @@ def hent_zone_og_farve(pnr):
     elif 8000 <= pnr_int <= 8999: return "Østjylland", "🔴"
     return "Nordjylland", "⚫"
 
-# --- AVANCERET RUTEMOTOR (OPDATERET LOGIK) ---
+# --- AVANCERET RUTEMOTOR ---
 @st.cache_data
 def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, valgt_loft):
     beregnede_aftaler = []
@@ -144,7 +145,6 @@ def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, v
             uge_id = f"{aktuelt_aar}-Uge{uge_nummer:02d}"
             dag_taeller = {d: 0 for d in ALLE_DAGE_GLOBAL}
             
-            # 1. Håndter manuelle flytninger først
             for kunde in konsulent_kunder:
                 try: besøg_pr_uge = int(kunde.get("besoeg_pr_uge", 1))
                 except: besøg_pr_uge = 1
@@ -160,22 +160,16 @@ def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, v
                                 "uge_id": uge_id, "dag": man_dag
                             })
 
-            # 2. Placer resterende baseret på frekvens
             for kunde in konsulent_kunder:
                 try: freq = float(str(kunde.get("frekvens", 1)).replace(',', '.'))
                 except: freq = 1.0
-                
-                # Frekvens logik: Hvis frekvens 0.25 (hver 4. uge), modulo tjek
                 interval = int(1/freq) if freq > 0 else 1
                 if uge_nummer % interval != 0: continue
-
                 try: besøg_pr_uge = int(kunde.get("besoeg_pr_uge", 1))
                 except: besøg_pr_uge = 1
-
                 for b_idx in range(besøg_pr_uge):
                     slot_id = f"{kunde['id']}-{uge_id}-b{b_idx}"
                     if any(a["id"] == slot_id for a in beregnede_aftaler): continue
-                    
                     ledig_dag = min(konsulent_arbejdsdage, key=lambda d: dag_taeller[d])
                     if dag_taeller[ledig_dag] < valgt_loft:
                         dag_taeller[ledig_dag] += 1
