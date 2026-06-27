@@ -129,7 +129,7 @@ def hent_zone_og_farve(pnr):
     elif 8000 <= pnr_int <= 8999: return "Østjylland", "🔴"
     return "Nordjylland", "⚫"
 
-# --- AVANCERET RUTEMOTOR ---
+# --- FORBEDRET RUTEMOTOR ---
 @st.cache_data
 def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, valgt_loft):
     beregnede_aftaler = []
@@ -145,6 +145,7 @@ def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, v
             uge_id = f"{aktuelt_aar}-Uge{uge_nummer:02d}"
             dag_taeller = {d: 0 for d in ALLE_DAGE_GLOBAL}
             
+            # 1. Håndter manuelle flytninger (Tvinges ind)
             for kunde in konsulent_kunder:
                 try: besøg_pr_uge = int(kunde.get("besoeg_pr_uge", 1))
                 except: besøg_pr_uge = 1
@@ -160,24 +161,28 @@ def beregn_ruter_cached(kunder, konsulenter, arbejdsdage, manuelle_flytninger, v
                                 "uge_id": uge_id, "dag": man_dag
                             })
 
+            # 2. Placer resterende kunder - Tjekker frekvens og tvinger dem ind
             for kunde in konsulent_kunder:
                 try: freq = float(str(kunde.get("frekvens", 1)).replace(',', '.'))
                 except: freq = 1.0
                 interval = int(1/freq) if freq > 0 else 1
                 if uge_nummer % interval != 0: continue
+                
                 try: besøg_pr_uge = int(kunde.get("besoeg_pr_uge", 1))
                 except: besøg_pr_uge = 1
+                
                 for b_idx in range(besøg_pr_uge):
                     slot_id = f"{kunde['id']}-{uge_id}-b{b_idx}"
                     if any(a["id"] == slot_id for a in beregnede_aftaler): continue
+                    
+                    # Find dag med mindst belastning, uanset om loft er nået
                     ledig_dag = min(konsulent_arbejdsdage, key=lambda d: dag_taeller[d])
-                    if dag_taeller[ledig_dag] < valgt_loft:
-                        dag_taeller[ledig_dag] += 1
-                        beregnede_aftaler.append({
-                            "id": slot_id, "kunde_id": kunde["id"], "kundenavn": kunde["navn"], 
-                            "by": kunde["by"], "postnr": kunde["postnr"], "konsulent_id": k_id, 
-                            "uge_id": uge_id, "dag": ledig_dag
-                        })
+                    dag_taeller[ledig_dag] += 1
+                    beregnede_aftaler.append({
+                        "id": slot_id, "kunde_id": kunde["id"], "kundenavn": kunde["navn"], 
+                        "by": kunde["by"], "postnr": kunde["postnr"], "konsulent_id": k_id, 
+                        "uge_id": uge_id, "dag": ledig_dag
+                    })
     return beregnede_aftaler
 
 # --- LOGIN SKÆRM ---
@@ -315,3 +320,4 @@ if st.session_state['bruger_rolle'] == "admin":
         for f in [FIL_KUNDER, FIL_KONSULENTER, FIL_FLYTNINGER, FIL_KODER]:
             if os.path.exists(f): os.remove(f)
         st.cache_data.clear(); st.session_state.clear(); st.rerun()
+    
